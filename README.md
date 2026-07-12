@@ -3,7 +3,9 @@
 A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, translating demand, logistics, and cancellation patterns into business-relevant insights.
 
 > **Status: In Progress (May 2026 – Present)**
+
 > Full write-up (project journey, debugging process, and detailed findings): [Notion](https://app.notion.com/p/E-Commerce-Sales-Logistics-Analytics-Project-39b7c6f38f688127838ce00127e455d4)
+
 > Demand, Logistics, and Root Cause sections are complete. Customer geography and payment analysis are in progress (see Roadmap below).
 ---
 
