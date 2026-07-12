@@ -45,7 +45,7 @@ The goal was not just to write correct SQL, but to **translate raw numbers into 
 - **Average delivery time is 12.09 days, but the actual mode is 7 days**, with most orders concentrated in the 6–9 day range. The average is skewed upward by a long tail of severely delayed orders — suggesting the KPI should be **redefined using median or P90 instead of mean**.
 - Deliveries delayed 30+ days account for only ~4.1% of all orders — reframing the logistics problem from "systemic failure" to "a small number of extreme cases." This implies improvement efforts should target long-tail delay elimination rather than reducing the average.
 
-### 🔍 Root Cause — Seller Segmentation
+### Root Cause — Seller Segmentation
 - Comparing seller performance revealed a clear split: **top-performing sellers had an average hand-off time of 0.6–2 days and a 0–1% late delivery rate**, while **problem sellers averaged 5–15 days hand-off time with a 15–32.1% late delivery rate**.
 - Hand-off time (time from order approval to carrier pickup) can serve as a **leading indicator** for delivery risk — flagging slow-hand-off sellers early could allow proactive intervention before delivery delays occur.
 - Exceptions exist (some sellers with slow hand-off still had 0% late deliveries), so delivery performance is treated as multi-factor (seller, carrier, estimated-delivery-date policy) rather than attributed to sellers alone.
