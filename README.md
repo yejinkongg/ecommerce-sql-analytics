@@ -35,12 +35,12 @@ The goal was not just to write correct SQL, but to **translate raw numbers into 
 
 ## 4. Key Insights (Business Analyst Perspective)
 
-### 📈 Demand
+### Demand
 - Order volume grew steadily from early 2017, then **spiked +62.9% month-over-month in November 2017** (4,631 → 7,544 orders), followed by a -24.8% pullback in December. With only one year of data, this can't be confirmed as recurring seasonality, but it flags a need to plan for peak-season demand and promotions.
 - From Jan–Aug 2018, order volume held steady in the 6,700–7,300 range (±10% MoM) — a shift from growth phase to a maturity/plateau phase.
 - **Repeat purchase rate is only 3.12%** (avg. 1.03 orders per customer), meaning revenue growth is heavily dependent on new customer acquisition rather than retention. This suggests rising long-term CAC risk and supports prioritizing retention tactics (post-purchase coupons, membership programs).
 
-### 🚚 Logistics
+### Logistics
 - Of all completed deliveries (96,476), **93.23% arrived on or before the estimated delivery date** (6.77% delayed) — indicating high delivery reliability overall.
 - **Average delivery time is 12.09 days, but the actual mode is 7 days**, with most orders concentrated in the 6–9 day range. The average is skewed upward by a long tail of severely delayed orders — suggesting the KPI should be **redefined using median or P90 instead of mean**.
 - Deliveries delayed 30+ days account for only ~4.1% of all orders — reframing the logistics problem from "systemic failure" to "a small number of extreme cases." This implies improvement efforts should target long-tail delay elimination rather than reducing the average.
@@ -50,7 +50,7 @@ The goal was not just to write correct SQL, but to **translate raw numbers into 
 - Hand-off time (time from order approval to carrier pickup) can serve as a **leading indicator** for delivery risk — flagging slow-hand-off sellers early could allow proactive intervention before delivery delays occur.
 - Exceptions exist (some sellers with slow hand-off still had 0% late deliveries), so delivery performance is treated as multi-factor (seller, carrier, estimated-delivery-date policy) rather than attributed to sellers alone.
 
-### ❌ Cancellations
+### Cancellations
 - Monthly cancellation rates stayed low overall, generally between 0.2% and 1.3%. Notably, **during the month of steepest demand growth (Nov 2017, +62.9% MoM), the cancellation rate actually dropped from 0.56% to 0.49%** — indicating that the demand surge did not come at the cost of operational quality.
 - However, no cancellation-reason or cancellation-timestamp data exists, so a causal link between delivery delays and cancellations could not be tested (see Limitations).
 
@@ -58,12 +58,12 @@ The goal was not just to write correct SQL, but to **translate raw numbers into 
 
 | Item | Status |
 |---|---|
-| Demand Analysis (order volume trend, repeat purchase rate) | ✅ Done |
-| Logistics Analysis (delivery time, delay rate, hand-off time) | ✅ Done |
-| Root Cause Analysis (seller segmentation) | ✅ Done |
-| Customer geography analysis (`customer_state`) | 🔲 Planned |
-| Payment / AOV analysis | 🔲 Planned |
-| Delayed delivery vs. repeat purchase rate (proxy for missing `order_reviews`) | 🔲 Planned |
+| Demand Analysis (order volume trend, repeat purchase rate) | Done |
+| Logistics Analysis (delivery time, delay rate, hand-off time) | Done |
+| Root Cause Analysis (seller segmentation) | Done |
+| Customer geography analysis (`customer_state`) | Planned |
+| Payment / AOV analysis | Planned |
+| Delayed delivery vs. repeat purchase rate (proxy for missing `order_reviews`) | Planned |
 
 ## 6. Limitations & Retrospective
 
