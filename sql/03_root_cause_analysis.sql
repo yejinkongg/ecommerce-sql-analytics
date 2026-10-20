@@ -197,11 +197,102 @@ WHERE avg_handoff_days IS NOT NULL;
 
 -- ---------------------------------------------------------------------
 -- 3.6 Revenue x Delivery-Risk Seller Segmentation (2x2)
--- ---------------------------------------------------------------------
--- STATUS: Not yet finalized in this repository.
+-- Question: Which qualifying sellers combine high commercial value with
+--           elevated delivery risk?
 --
--- This segmentation will group sellers into High/Low Revenue x High/Low
--- Delivery Risk quadrants using verified population-level thresholds.
--- The final query will be added only after it is re-run and validated in
--- BigQuery; it is intentionally not reconstructed from memory here.
+-- Revenue definition: sum of `order_items.price` at seller-order grain.
+-- This avoids the order_items x payments fan-out risk because payments are
+-- not joined here.
+--
+-- Population: the same seller-order base and >=50 seller-order threshold used
+-- above, so the segmentation is directly comparable to seller_performance.
+-- Thresholds: population medians for total revenue and late-delivery rate.
 -- ---------------------------------------------------------------------
+CREATE TEMP TABLE seller_order_revenue AS
+SELECT
+  seller_id,
+  order_id,
+  SUM(price) AS order_revenue
+FROM `e-commerce-public-dataanalysis.olist.order_items`
+GROUP BY seller_id, order_id;
+
+CREATE TEMP TABLE seller_value_risk AS
+SELECT
+  so.seller_id,
+  COUNT(*) AS total_orders,
+  ROUND(SUM(sor.order_revenue), 2) AS total_revenue,
+  ROUND(
+    SAFE_DIVIDE(COUNTIF(so.late_days > 0), COUNT(*)) * 100,
+    2
+  ) AS late_delivery_rate
+FROM seller_order so
+JOIN seller_order_revenue sor
+  ON so.seller_id = sor.seller_id
+ AND so.order_id = sor.order_id
+GROUP BY so.seller_id
+HAVING COUNT(*) >= 50;
+
+CREATE TEMP TABLE seller_segments AS
+WITH thresholds AS (
+  SELECT
+    APPROX_QUANTILES(total_revenue, 2)[OFFSET(1)] AS median_total_revenue,
+    APPROX_QUANTILES(late_delivery_rate, 2)[OFFSET(1)] AS median_late_delivery_rate
+  FROM seller_value_risk
+)
+SELECT
+  svr.seller_id,
+  svr.total_orders,
+  svr.total_revenue,
+  svr.late_delivery_rate,
+  ROUND(t.median_total_revenue, 2) AS median_total_revenue,
+  ROUND(t.median_late_delivery_rate, 2) AS median_late_delivery_rate,
+  CASE
+    WHEN svr.total_revenue >= t.median_total_revenue
+      AND svr.late_delivery_rate >= t.median_late_delivery_rate
+      THEN 'High Revenue / High Risk'
+    WHEN svr.total_revenue >= t.median_total_revenue
+      AND svr.late_delivery_rate < t.median_late_delivery_rate
+      THEN 'High Revenue / Low Risk'
+    WHEN svr.total_revenue < t.median_total_revenue
+      AND svr.late_delivery_rate >= t.median_late_delivery_rate
+      THEN 'Low Revenue / High Risk'
+    ELSE 'Low Revenue / Low Risk'
+  END AS seller_segment
+FROM seller_value_risk svr
+CROSS JOIN thresholds t;
+
+-- Seller-level detail for investigation / export
+SELECT
+  seller_id,
+  total_orders,
+  total_revenue,
+  late_delivery_rate,
+  median_total_revenue,
+  median_late_delivery_rate,
+  seller_segment
+FROM seller_segments
+ORDER BY
+  CASE seller_segment
+    WHEN 'High Revenue / High Risk' THEN 1
+    WHEN 'High Revenue / Low Risk' THEN 2
+    WHEN 'Low Revenue / High Risk' THEN 3
+    ELSE 4
+  END,
+  total_revenue DESC;
+
+-- Segment summary for business prioritization
+SELECT
+  seller_segment,
+  COUNT(*) AS sellers,
+  ROUND(SUM(total_revenue), 2) AS segment_revenue,
+  ROUND(AVG(late_delivery_rate), 2) AS avg_late_delivery_rate,
+  ROUND(AVG(total_orders), 1) AS avg_orders_per_seller
+FROM seller_segments
+GROUP BY seller_segment
+ORDER BY
+  CASE seller_segment
+    WHEN 'High Revenue / High Risk' THEN 1
+    WHEN 'High Revenue / Low Risk' THEN 2
+    WHEN 'Low Revenue / High Risk' THEN 3
+    ELSE 4
+  END;
