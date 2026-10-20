@@ -13,9 +13,10 @@
 -- Customer grain:
 -- Orders are sequenced within each customer_unique_id. The first observed
 -- order is classified as late or on-time/early only when a delivery timestamp
--- exists. Repeat purchase is counted only when a later order is placed AFTER
--- the first order's delivery timestamp, so pre-delivery follow-up orders are
--- not incorrectly attributed to the first delivery experience.
+-- exists. Repeat purchase is counted only when ANY later order is placed AFTER
+-- the first order's delivery timestamp. A customer's second order may occur
+-- before first delivery and a third/later order can still qualify as a
+-- post-delivery repeat purchase.
 --
 -- Coverage:
 -- 96,096 unique customers exist in the dataset. 93,254 have a delivered first
@@ -92,23 +93,23 @@ FROM customer_repeat
 GROUP BY first_delivery_status
 ORDER BY first_delivery_status;
 
--- Recalculated result summary (post-delivery repeat only):
+-- CSV-reproduced result summary for the SQL logic above:
 --   First order late:
---     6,345 customers | 74 repeat after delivery | 1.17% repeat rate
+--     6,345 customers | 79 repeat after delivery | 1.25% repeat rate
 --   First order on time / early:
---     86,909 customers | 1,711 repeat after delivery | 1.97% repeat rate
+--     86,909 customers | 1,759 repeat after delivery | 2.02% repeat rate
 --
 -- Observed difference:
---   Post-delivery repeat rate is 0.80 percentage points lower among customers
---   whose first observed delivery was late (1.17% vs. 1.97%).
+--   Post-delivery repeat rate is 0.77 percentage points lower among customers
+--   whose first observed delivery was late (1.25% vs. 2.02%).
 --
 -- Why this differs from the earlier 2.54% vs. 3.13% comparison:
 --   The earlier version counted any customer with 2+ observed orders as a
 --   repeat customer, including orders placed before the first delivery was
---   completed. Among those earlier repeat customers, 1,092 of 2,877 (38.0%)
---   placed the next order before first delivery; this share was 54.0% in the
---   late group and 37.0% in the on-time/early group. Restricting the outcome
---   to purchases after first delivery better matches the business question.
+--   completed. The current logic scans all later orders and counts a customer
+--   if at least one later purchase occurs after first delivery. Therefore a
+--   customer whose second order was pre-delivery can still count if a third or
+--   later order was placed after first delivery.
 --
 -- Business interpretation:
 --   The direction remains consistent with worse first-delivery experiences
