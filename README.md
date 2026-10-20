@@ -1,8 +1,8 @@
 # E-Commerce Sales & Logistics Analytics
 
-A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, translating demand, logistics, cancellation, seller-level delivery patterns, customer geography, and payment behavior into business-relevant insights.
+A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, translating demand, logistics, cancellation, seller-level delivery patterns, customer geography, payment behavior, and repeat-purchase signals into business-relevant insights.
 
-> **Status: Core analysis and Tableau dashboard complete; delayed delivery vs. repeat-purchase follow-up remains.**
+> **Status: Core analysis and Tableau dashboard complete.**
 
 > Interactive dashboard: [Tableau Public](https://public.tableau.com/views/E-CommerceSalesLogisticsAnalytics/Dashboard1?:language=en-US&publish=yes&:sid=&:redirect=auth&:display_count=n&:origin=viz_share_link)
 >
@@ -22,6 +22,7 @@ A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, transl
 - In the Revenue x Delivery-Risk segmentation, **116 High Revenue / High Risk sellers accounted for 4.57M in seller revenue and averaged a 9.38% late-delivery rate**
 - **SP accounted for 41.98% of orders** with a 4.49% late-delivery rate, while **RJ accounted for 12.92% of orders** with a much higher 12.10% late-delivery rate
 - **Credit cards accounted for 75.40% of payment orders** and had the highest AOV among major payment methods at **167.29**
+- Customers whose first observed delivery was late had a **2.54% repeat-purchase rate**, versus **3.13%** for customers whose first delivery was on time or early
 
 The goal was not just to write correct SQL, but to **translate raw numbers into business decisions while documenting metric definitions, data-quality issues, and analytical limitations.**
 
@@ -36,6 +37,7 @@ This project uses e-commerce operations data to answer:
 - Which sellers combine high commercial value with elevated delivery risk?
 - Which customer geographies combine high order exposure with elevated delivery risk?
 - Which payment methods dominate order volume, and how does AOV differ by payment type?
+- Is first-delivery performance associated with later repeat purchasing?
 - What operational or customer-growth actions do these findings support?
 
 ## 2. Dataset
@@ -43,7 +45,7 @@ This project uses e-commerce operations data to answer:
 - **Olist Brazilian E-Commerce Public Dataset** (Kaggle)
 - Analysis period: Sep 2016 - Oct 2018 (some months have incomplete data; see Limitations)
 - Tables used in the current SQL: `orders`, `order_items`, `customers`, `payments`
-- Additional tables reserved for future extensions: `geolocation`, `category_translation`
+- Additional tables available for future extensions: `geolocation`, `category_translation`
 
 See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table availability, metric definitions, seller-order grain, and data-quality handling.
 
@@ -52,7 +54,7 @@ See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table
 - **BigQuery Standard SQL**
 - **Tableau Public** for the executive dashboard
 - CTEs and temporary tables
-- Window functions (`AVG() OVER()`, `LAG() OVER()`, `SUM() OVER()`)
+- Window functions (`AVG() OVER()`, `LAG() OVER()`, `SUM() OVER()`, `ROW_NUMBER() OVER()`, `COUNT() OVER()`)
 - `SAFE_DIVIDE`, `DATE_DIFF`, `DATE_TRUNC`, `FORMAT_DATE`
 - `APPROX_QUANTILES` for seller-level distribution summaries and segmentation thresholds
 - `CORR` for seller-level association analysis
@@ -60,6 +62,7 @@ See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table
 - Seller revenue aggregation from `order_items.price` without joining payments, avoiding order_items x payments fan-out
 - Payment aggregation to one row per order before payment-method analysis to avoid duplication
 - State-level demand and delivery-risk comparison using dynamic order-share calculations
+- Customer-level order sequencing to compare first-delivery experience with later repeat purchasing
 - Tableau KPI cards, dual-axis monthly trend visualization, seller-risk scatter plot, and linear trend line
 
 ## 4. Key Insights
@@ -134,6 +137,19 @@ Payment behavior is concentrated in a few methods:
 
 **Business interpretation:** credit cards dominate both order volume and payment value and also show the highest AOV among the major payment methods. Boleto remains an important secondary method at nearly one-fifth of orders. These differences are descriptive, not causal; product mix, customer mix, promotions, and order composition may contribute to AOV differences.
 
+### First Delivery Experience & Repeat Purchase
+
+Customers were grouped by whether their **first observed delivered order** arrived late or on time/early, then compared on whether they later placed another order:
+
+| First delivery status | Customers | Repeat customers | Repeat rate |
+|---|---:|---:|---:|
+| First order late | 6,345 | 161 | 2.54% |
+| First order on time / early | 86,909 | 2,716 | 3.13% |
+
+The observed repeat-purchase rate is **0.59 percentage points lower** among customers whose first delivery was late.
+
+**Business interpretation:** the direction is consistent with poorer first-delivery experiences being associated with weaker retention, but the difference is modest and observational. It should be treated as a retention-risk signal rather than proof that late delivery causes lower repeat purchase.
+
 ### Cancellations
 
 - Monthly cancellation rates generally stayed between **0.2% and 1.3%**.
@@ -158,10 +174,10 @@ The Tableau Public dashboard summarizes the core findings in one view:
 - Prioritize the **High Revenue / High Risk** seller segment for operational review because it combines elevated late-delivery risk with the greatest revenue exposure.
 - Investigate **RJ delivery performance** because it combines high order exposure with a 12.10% late-delivery rate, well above the platform average.
 - Treat **credit card and boleto** as the most commercially important payment methods because they account for the overwhelming majority of order volume and payment value.
+- Treat a **late first delivery** as a potential retention-risk signal and investigate whether the relationship persists after controlling for geography, product mix, seller mix, and customer tenure.
 - Monitor seller hand-off time as **one** delivery-risk signal rather than treating it as a standalone predictor.
 - Prioritize investigation of sellers with persistently elevated late-delivery rates and long hand-off patterns.
 - Complement average delivery time with **median, P90, on-time rate, and long-tail exception monitoring** in future KPI design.
-- Investigate retention opportunities given the **3.12% repeat customer rate**.
 
 ## 7. Status & Roadmap
 
@@ -174,8 +190,8 @@ The Tableau Public dashboard summarizes the core findings in one view:
 | Revenue x delivery-risk 2x2 segmentation | Done |
 | Customer geography analysis | Done |
 | Payment / AOV analysis | Done |
+| Delayed delivery vs. repeat purchase | Done |
 | Tableau executive dashboard | Done |
-| Delayed delivery vs. repeat purchase | Planned |
 
 ## 8. Limitations & Retrospective
 
@@ -188,6 +204,7 @@ The Tableau Public dashboard summarizes the core findings in one view:
 - **2x2 segmentation:** the four seller segments are prioritization buckets based on population medians, not causal classifications or externally validated risk thresholds.
 - **Geography:** state-level late-delivery rates identify where reliability differs, but they do not isolate the underlying cause; distance, carrier mix, seller mix, or other factors may contribute.
 - **Payment/AOV:** payment-method differences in AOV are descriptive and should not be interpreted as causal effects of payment choice.
+- **Repeat purchase:** the late-first-delivery comparison is observational and does not control for confounding factors or unequal observation windows. The 0.59 percentage-point gap should be treated as an association, not a causal retention effect.
 
 ## 9. Repository Structure
 
@@ -198,7 +215,8 @@ The Tableau Public dashboard summarizes the core findings in one view:
 │   ├── 03_root_cause_analysis.sql
 │   ├── 04_tableau_exports.sql
 │   ├── 05_customer_geography.sql
-│   └── 06_payment_aov.sql
+│   ├── 06_payment_aov.sql
+│   └── 07_delivery_repeat_purchase.sql
 ├── docs/
 │   └── schema_notes.md
 ├── README.md
