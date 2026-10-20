@@ -70,7 +70,7 @@ See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table
 ### Demand
 
 - Order volume grew steadily from early 2017, then **spiked 62.9% month over month in November 2017** (4,631 -> 7,544 orders), followed by a **24.8% pullback** in December.
-- From Jan-Aug 2018, monthly order volume remained around **6,700-7,300 orders**.
+- From Jan-Aug 2018, monthly order volume remained around **6,200-7,300 orders**.
 - Average orders per customer were **1.03**, and only **3.12% of customers** placed two or more orders.
 
 **Business interpretation:** growth appears heavily dependent on new-customer acquisition, supporting further investigation into retention and repeat-purchase opportunities.
