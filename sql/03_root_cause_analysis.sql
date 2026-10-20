@@ -60,41 +60,19 @@ WHERE
 CREATE TEMP TABLE seller_performance AS
 SELECT
   seller_id,
-
-  -- One row in seller_order = one seller-order
   COUNT(*) AS total_orders,
-
-  -- Data-quality visibility for hand-off metrics
   COUNTIF(handoff_days >= 0) AS valid_handoff_orders,
   COUNTIF(handoff_days < 0) AS invalid_negative_handoff_orders,
-
-  -- Average valid hand-off time (approval -> carrier pickup)
+  ROUND(AVG(IF(handoff_days >= 0, handoff_days, NULL)), 2) AS avg_handoff_days,
   ROUND(
-    AVG(IF(handoff_days >= 0, handoff_days, NULL)),
-    2
-  ) AS avg_handoff_days,
-
-  -- Share of valid seller-orders with 3+ day hand-off time
-  ROUND(
-    SAFE_DIVIDE(
-      COUNTIF(handoff_days >= 3),
-      COUNTIF(handoff_days >= 0)
-    ) * 100,
+    SAFE_DIVIDE(COUNTIF(handoff_days >= 3), COUNTIF(handoff_days >= 0)) * 100,
     2
   ) AS handoff_3plus_rate,
-
-  -- Average delivery time (purchase -> customer receipt)
   ROUND(AVG(delivery_days), 2) AS avg_delivery_days,
-
-  -- Order-level late-delivery rate
   ROUND(
-    SAFE_DIVIDE(
-      COUNTIF(late_days > 0),
-      COUNT(*)
-    ) * 100,
+    SAFE_DIVIDE(COUNTIF(late_days > 0), COUNT(*)) * 100,
     2
   ) AS late_delivery_rate
-
 FROM seller_order
 GROUP BY seller_id
 HAVING COUNT(*) >= 50;
@@ -113,19 +91,16 @@ HAVING COUNT(*) >= 50;
 -- ---------------------------------------------------------------------
 SELECT
   COUNT(*) AS qualifying_sellers,
-
   ROUND(MIN(avg_handoff_days), 2) AS min_avg_handoff_days,
   ROUND(APPROX_QUANTILES(avg_handoff_days, 4)[OFFSET(1)], 2) AS p25_avg_handoff_days,
   ROUND(APPROX_QUANTILES(avg_handoff_days, 4)[OFFSET(2)], 2) AS median_avg_handoff_days,
   ROUND(APPROX_QUANTILES(avg_handoff_days, 4)[OFFSET(3)], 2) AS p75_avg_handoff_days,
   ROUND(MAX(avg_handoff_days), 2) AS max_avg_handoff_days,
-
   ROUND(MIN(late_delivery_rate), 2) AS min_late_delivery_rate,
   ROUND(APPROX_QUANTILES(late_delivery_rate, 4)[OFFSET(1)], 2) AS p25_late_delivery_rate,
   ROUND(APPROX_QUANTILES(late_delivery_rate, 4)[OFFSET(2)], 2) AS median_late_delivery_rate,
   ROUND(APPROX_QUANTILES(late_delivery_rate, 4)[OFFSET(3)], 2) AS p75_late_delivery_rate,
   ROUND(MAX(late_delivery_rate), 2) AS max_late_delivery_rate,
-
   SUM(invalid_negative_handoff_orders) AS negative_handoff_rows
 FROM seller_performance;
 
@@ -136,9 +111,6 @@ FROM seller_performance;
 -- Validated range among the 20 lowest late-delivery-rate sellers:
 --   Late-delivery rate: 0.00% to 0.93%
 --   Average hand-off time: 0.67 to 4.73 days
---
--- Note: several highly reliable sellers still have relatively long hand-off
--- times, so hand-off speed alone does not determine delivery reliability.
 -- ---------------------------------------------------------------------
 SELECT
   seller_id,
@@ -160,10 +132,6 @@ LIMIT 20;
 -- Validated range among the 20 highest late-delivery-rate sellers:
 --   Late-delivery rate: 15.32% to 30.14%
 --   Average hand-off time: 1.40 to 15.14 days
---
--- Note: some high-risk sellers still have relatively short hand-off times,
--- reinforcing that delivery risk is multi-factor rather than seller-handoff
--- driven alone.
 -- ---------------------------------------------------------------------
 SELECT
   seller_id,
@@ -204,9 +172,23 @@ WHERE avg_handoff_days IS NOT NULL;
 -- This avoids the order_items x payments fan-out risk because payments are
 -- not joined here.
 --
--- Population: the same seller-order base and >=50 seller-order threshold used
--- above, so the segmentation is directly comparable to seller_performance.
--- Thresholds: population medians for total revenue and late-delivery rate.
+-- Population: same seller-order base and >=50 seller-order threshold used
+-- above. Thresholds are the qualifying-seller medians for total revenue and
+-- late-delivery rate.
+--
+-- Validated segment summary:
+--   High Revenue / High Risk: 116 sellers | 4,571,185.21 revenue |
+--     9.38% avg late-delivery rate | 268.6 avg orders/seller
+--   High Revenue / Low Risk: 96 sellers | 3,058,795.86 revenue |
+--     3.49% avg late-delivery rate | 240.8 avg orders/seller
+--   Low Revenue / High Risk: 99 sellers | 610,916.18 revenue |
+--     10.19% avg late-delivery rate | 89.2 avg orders/seller
+--   Low Revenue / Low Risk: 114 sellers | 755,739.07 revenue |
+--     2.97% avg late-delivery rate | 95.3 avg orders/seller
+--
+-- Business interpretation: High Revenue / High Risk is the primary
+-- intervention segment because it combines the largest revenue exposure with
+-- materially elevated late-delivery risk.
 -- ---------------------------------------------------------------------
 CREATE TEMP TABLE seller_order_revenue AS
 SELECT
@@ -261,7 +243,6 @@ SELECT
 FROM seller_value_risk svr
 CROSS JOIN thresholds t;
 
--- Seller-level detail for investigation / export
 SELECT
   seller_id,
   total_orders,
@@ -280,7 +261,6 @@ ORDER BY
   END,
   total_revenue DESC;
 
--- Segment summary for business prioritization
 SELECT
   seller_segment,
   COUNT(*) AS sellers,
