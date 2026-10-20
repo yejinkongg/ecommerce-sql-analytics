@@ -174,8 +174,11 @@ ORDER BY late_delivery_rate, total_orders DESC;
 -- Purpose: KPI cards for the executive dashboard
 -- Returns one row.
 --
--- Note: avg_handoff_days below follows the validated seller-analysis handling
--- rule by excluding negative hand-off anomalies from the overall hand-off KPI.
+-- Average delivery time intentionally matches Part 2's validated definition:
+-- DATE_DIFF on the original timestamps (12.09 days in the validated output).
+-- Seller hand-off is not included as a dashboard KPI here because Part 2 and
+-- Part 3 currently use different hand-off definitions. Use 4.3 for seller
+-- hand-off analysis until those definitions are fully unified.
 -- ---------------------------------------------------------------------
 WITH customer_orders AS (
   SELECT
@@ -197,19 +200,10 @@ order_kpis AS (
     AVG(
       IF(
         order_delivered_customer_date IS NOT NULL,
-        DATE_DIFF(DATE(order_delivered_customer_date), DATE(order_purchase_timestamp), DAY),
+        DATE_DIFF(order_delivered_customer_date, order_purchase_timestamp, DAY),
         NULL
       )
-    ) AS avg_delivery_days,
-    AVG(
-      IF(
-        order_approved_at IS NOT NULL
-        AND order_delivered_carrier_date IS NOT NULL
-        AND DATE_DIFF(DATE(order_delivered_carrier_date), DATE(order_approved_at), DAY) >= 0,
-        DATE_DIFF(DATE(order_delivered_carrier_date), DATE(order_approved_at), DAY),
-        NULL
-      )
-    ) AS avg_valid_handoff_days
+    ) AS avg_delivery_days
   FROM `e-commerce-public-dataanalysis.olist.orders`
 ),
 customer_kpis AS (
@@ -224,7 +218,6 @@ SELECT
   ROUND(SAFE_DIVIDE(o.delivered_orders - o.late_orders, o.delivered_orders) * 100, 2) AS on_time_rate,
   ROUND(SAFE_DIVIDE(o.late_orders, o.delivered_orders) * 100, 2) AS late_delivery_rate,
   ROUND(o.avg_delivery_days, 2) AS avg_delivery_days,
-  ROUND(o.avg_valid_handoff_days, 2) AS avg_valid_handoff_days,
   c.unique_customers,
   c.repeat_customers,
   ROUND(SAFE_DIVIDE(c.repeat_customers, c.unique_customers) * 100, 2) AS repeat_customer_rate
