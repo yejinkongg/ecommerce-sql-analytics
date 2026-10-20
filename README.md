@@ -22,7 +22,7 @@ A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, transl
 - Using **APPROX_QUANTILES-based approximate median thresholds**, **116 High Revenue / High Risk sellers accounted for 4.57M in seller revenue and averaged a 9.38% late-delivery rate**
 - **SP accounted for 41.98% of orders** with a 4.49% late-delivery rate, while **RJ accounted for 12.92% of orders** with a much higher 12.10% late-delivery rate
 - **Credit cards accounted for 75.40% of payment orders** and had the highest **average payment value per order** among major payment methods at **167.29**
-- Among customers with a delivered first observed order, **post-delivery repeat purchase was 1.17% after a late first delivery vs. 1.97% after an on-time/early first delivery**
+- Among customers with a delivered first observed order, **post-delivery repeat purchase was 1.25% after a late first delivery vs. 2.02% after an on-time/early first delivery**
 
 The goal was not just to write correct SQL, but to **translate raw numbers into business decisions while documenting metric definitions, data-quality issues, and analytical limitations.**
 
@@ -141,16 +141,16 @@ The summary table omits **3 `not_defined` payment orders**. Payment records cove
 
 ### First Delivery Experience & Post-Delivery Repeat Purchase
 
-To make the retention comparison temporally valid, a repeat purchase is counted only when a later order is placed **after the customer's first observed delivery timestamp**. This excludes follow-up orders that occurred before the customer could have experienced the first delivery.
+To make the retention comparison temporally valid, a repeat purchase is counted when **any later order** is placed after the customer's first observed delivery timestamp. This excludes purchases that occurred before the customer could have experienced the first delivery, while still allowing a customer whose second order was pre-delivery to qualify if a third or later order occurred after delivery.
 
 | First delivery status | Eligible customers | Repeat customers after delivery | Post-delivery repeat rate |
 |---|---:|---:|---:|
-| First order late | 6,345 | 74 | 1.17% |
-| First order on time / early | 86,909 | 1,711 | 1.97% |
+| First order late | 6,345 | 79 | 1.25% |
+| First order on time / early | 86,909 | 1,759 | 2.02% |
 
-The observed post-delivery repeat-purchase rate is **0.80 percentage points lower** among customers whose first delivery was late. Of 96,096 unique customers, **93,254** have a delivered first observed order and enter this comparison; **2,842** whose first observed order lacks a delivery timestamp are excluded.
+The observed post-delivery repeat-purchase rate is **0.77 percentage points lower** among customers whose first delivery was late. Of 96,096 unique customers, **93,254** have a delivered first observed order and enter this comparison; **2,842** whose first observed order lacks a delivery timestamp are excluded.
 
-The earlier unrestricted comparison (2.54% vs. 3.13%) mixed in customers who reordered before the first delivery was completed. Among those earlier repeat customers, **1,092 of 2,877 (38.0%)** placed the next order before first delivery, so the post-delivery definition is used as the primary retention result.
+The earlier unrestricted comparison (2.54% vs. 3.13%) mixed in customers who reordered before the first delivery was completed. The current post-delivery definition scans all later orders and counts a customer if at least one purchase occurs after first delivery.
 
 **Business interpretation:** the direction is consistent with poorer first-delivery experiences being associated with weaker retention, but the result is still observational. It should be treated as a retention-risk signal rather than proof that late delivery causes lower repeat purchase.
 
@@ -208,7 +208,7 @@ The Tableau Public dashboard summarizes the core findings in one view:
 - **2x2 segmentation:** the four seller segments are prioritization buckets based on **approximate medians from `APPROX_QUANTILES`**, not exact-median splits, causal classifications, or externally validated risk thresholds. Sellers near a threshold can move between groups under an exact percentile calculation.
 - **Geography:** state-level late-delivery rates identify where reliability differs, but they do not isolate the underlying cause; distance, carrier mix, seller mix, or other factors may contribute.
 - **Payment value:** `payment_value` represents the amount paid rather than merchandise-only revenue and can include freight and financing/installment-related charges. Three `not_defined` payment orders are omitted from the summary table, and one of the 99,441 orders has no payment record.
-- **Repeat purchase:** the primary comparison now counts only orders placed after first delivery. It excludes **2,842 customers** whose first observed order has no delivery timestamp. The 1.17% vs. 1.97% gap remains observational and does not control for confounding factors or unequal customer observation windows.
+- **Repeat purchase:** the primary comparison counts a customer when any later order occurs after first delivery. It excludes **2,842 customers** whose first observed order has no delivery timestamp. The **1.25% vs. 2.02%** gap remains observational and does not control for confounding factors or unequal customer observation windows.
 
 ## 9. Repository Structure
 
