@@ -12,12 +12,17 @@
 SELECT
   order_status,
   COUNT(*) AS order_count,
-  ROUND(COUNT(*) / 99441 * 100, 2) AS percentage
+  ROUND(
+    SAFE_DIVIDE(COUNT(*), SUM(COUNT(*)) OVER ()) * 100,
+    2
+  ) AS percentage
 FROM `e-commerce-public-dataanalysis.olist.orders`
 GROUP BY order_status
 ORDER BY order_count DESC;
 
 -- Result: 'delivered' accounts for 96,478 orders (97.02%) of all orders.
+-- The denominator is calculated dynamically from the table rather than
+-- hardcoded, so the percentage remains valid if the source data changes.
 
 
 -- ---------------------------------------------------------------------
