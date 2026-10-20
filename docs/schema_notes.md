@@ -22,12 +22,13 @@
 - `sellers`
 - `order_reviews`
 
-**What happened:** query design initially assumed these three tables existed. They were not present in the BigQuery dataset used for this analysis. After queries against them failed, the available tables in the BigQuery project were rechecked and the analysis scope was adjusted accordingly.
+**What happened:** query design initially assumed these three tables existed. They were not present in the BigQuery dataset used for the original analysis. After queries against them failed, the available tables in the BigQuery project were rechecked and the analysis scope was adjusted accordingly.
 
 **Consequences:**
-- Seller-level analysis (Part 3) is derived from `order_items.seller_id` joined to `orders`, since there is no standalone `sellers` table. An order containing items from more than one seller is counted for each of those sellers. Within each seller, the revised analysis will use one row per seller-order to prevent multiple items from the same seller from weighting that order more than once.
-- Category-level analysis is not possible without `products`.
-- Review-based satisfaction analysis is not possible without `order_reviews`. Repeat purchase rate (from `customers` + `orders`, query 1.8 in `01`) is computed as a retention metric. It is not a satisfaction measure, and its link to delivery delays has not been analyzed yet (planned).
+- Seller-level analysis (Part 3) is derived from `order_items.seller_id` joined to `orders`, since no standalone `sellers` table was used in the original analysis. An order containing items from more than one seller is counted once for each seller represented in that order.
+- Within each seller, Part 3 now uses one row per seller-order, preventing multiple items from the same seller from weighting a single order more than once.
+- Category-level analysis is not implemented in the current SQL.
+- Repeat purchase rate (from `customers` + `orders`, query 1.8 in `01`) is used as a retention metric. It is not treated as a satisfaction measure, and its relationship with delivery delays has not yet been analyzed.
 
 **Takeaway:** verify the actual schema of the specific dataset instance before designing queries.
 
@@ -37,20 +38,37 @@
 |---|---|---|
 | Average delivery time, delivery buckets, most common delivery time, average hand-off time | `02` 2.1, 2.2, 2.3, 2.6 | `DATE_DIFF` applied to the raw timestamp columns |
 | On-time / late rate, days early or late, hand-off distribution | `02` 2.4, 2.5, 2.7 | Differences between `DATE()`-truncated values |
-| Seller hand-off, delivery time and late rate | `03` 3.1 | Differences between `DATE()`-truncated values |
+| Seller hand-off, delivery time and late rate | `03` 3.0-3.5 | Differences between `DATE()`-truncated values at one row per seller-order |
 
-**Known inconsistency:** the two approaches in the table above are not the same definition, so average hand-off in `02` 2.6 and seller-level average hand-off in `03` 3.1 are not directly comparable. The definitions are to be unified across `01`-`03`.
+**Known inconsistency:** the overall hand-off metric in `02` 2.6 and the seller-level hand-off metric in `03` do not use exactly the same time definition, so their averages are not directly comparable. The definitions should be unified in a future cleanup pass.
 
-**Known issue in `03` 3.1:** the late rate and the share of 3+ day hand-offs use `COUNT(*)` over `orders` x `order_items` rows, i.e. they are item-row based, while `total_orders` counts distinct orders. The query is to be rewritten at one row per seller-order.
+## Seller-level analysis grain and data-quality handling
+
+Part 3 now creates a distinct `seller_id` + `order_id` base table before calculating seller metrics. This makes late-delivery rates and hand-off rates seller-order based rather than item-row based.
+
+Negative hand-off durations (`order_delivered_carrier_date` earlier than `order_approved_at`) are treated as data-quality defects. They are:
+
+- retained in seller order counts and delivery metrics,
+- excluded from hand-off averages and hand-off-rate denominators,
+- counted separately for transparency.
+
+Among the 425 sellers with at least 50 seller-orders, 495 seller-order records have negative hand-off durations.
 
 ## Fan-out risk (not yet implemented)
 
-`order_items` and `payments` each have a one-to-many relationship with `orders`. A direct `JOIN` between `order_items` and `payments` on `order_id` multiplies rows for any order with more than one item and more than one payment record, which inflates `COUNT` / `SUM` aggregates.
+`order_items` and `payments` each have a one-to-many relationship with `orders`. A direct `JOIN` between `order_items` and `payments` on `order_id` can multiply rows for orders with multiple items and multiple payment records, inflating `COUNT` / `SUM` aggregates.
 
-**Planned mitigation:** aggregate each table to order level in separate CTEs before joining. No SQL in this repository joins `order_items` and `payments` yet, so this mitigation has not been implemented. It will be documented as used only after a query that applies it is added.
+**Planned mitigation:** aggregate each table to order level in separate CTEs before joining. No SQL in this repository currently joins `order_items` and `payments`, so this mitigation is documented as planned rather than implemented.
 
-## Known data quality issue
+## Validated seller-level results
 
-A small number of orders have `order_delivered_carrier_date` earlier than `order_approved_at`, producing negative hand-off durations (the most extreme case is -171 days). This is not logically possible in a normal order flow and is treated as a data quality defect rather than a real operational signal. In production it would call for timestamp validation at the ETL layer.
+For sellers with at least 50 seller-orders:
 
-**Current handling:** affected rows are not excluded from the hand-off calculations in `02` and `03`, so they are included in the averages. A handling rule and the number of affected rows will be added when `03` is rewritten.
+- **Qualifying sellers:** 425
+- **Median average hand-off time:** 2.14 days
+- **Median late-delivery rate:** 5.69%
+- **Top 20 sellers by delivery reliability:** 0.00-0.93% late-delivery rate; 0.67-4.73 average hand-off days
+- **Bottom 20 sellers by delivery reliability:** 15.32-30.14% late-delivery rate; 1.40-15.14 average hand-off days
+- **Pearson correlation between average hand-off time and late-delivery rate:** `r = 0.408`
+
+The correlation indicates a moderate positive association, but the overlap in hand-off times across high- and low-performing sellers shows that hand-off speed alone is not a sufficient predictor of delivery reliability.
