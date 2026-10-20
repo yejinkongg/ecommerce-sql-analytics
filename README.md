@@ -2,7 +2,7 @@
 
 A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, translating demand, logistics, cancellation, and seller-level delivery patterns into business-relevant insights.
 
-> **Status: Core analysis and Tableau dashboard complete; customer geography and payment/AOV analysis are planned next.**
+> **Status: Core analysis and Tableau dashboard complete; customer geography, payment/AOV, and repeat-purchase follow-up analyses remain.**
 
 > Interactive dashboard: [Tableau Public](https://public.tableau.com/views/E-CommerceSalesLogisticsAnalytics/Dashboard1?:language=en-US&publish=yes&:sid=&:redirect=auth&:display_count=n&:origin=viz_share_link)
 >
@@ -19,6 +19,7 @@ A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, transl
 - **3.12% repeat customer rate**
 - Among 425 sellers with at least 50 seller-orders, the **top 20 had 0.00-0.93% late-delivery rates**, while the **bottom 20 had 15.32-30.14%**
 - Seller average hand-off time and late-delivery rate showed a **moderate positive association (Pearson r = 0.408)**
+- In the Revenue x Delivery-Risk segmentation, **116 High Revenue / High Risk sellers accounted for 4.57M in seller revenue and averaged a 9.38% late-delivery rate**
 
 The goal was not just to write correct SQL, but to **translate raw numbers into business decisions while documenting metric definitions, data-quality issues, and analytical limitations.**
 
@@ -30,6 +31,7 @@ This project uses e-commerce operations data to answer:
 - How reliable is delivery performance, and what metrics actually reflect it?
 - Are delivery delays and cancellations systemic issues, or concentrated exceptions?
 - How much does seller hand-off performance relate to delivery reliability?
+- Which sellers combine high commercial value with elevated delivery risk?
 - What operational or customer-growth actions do these findings support?
 
 ## 2. Dataset
@@ -37,7 +39,7 @@ This project uses e-commerce operations data to answer:
 - **Olist Brazilian E-Commerce Public Dataset** (Kaggle)
 - Analysis period: Sep 2016 - Oct 2018 (some months have incomplete data; see Limitations)
 - Tables used in the current SQL: `orders`, `order_items`, `customers`
-- Planned for future analysis: `payments`, `geolocation`, `category_translation`
+- Additional tables reserved for follow-up analysis: `payments`, `geolocation`, `category_translation`
 
 See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table availability, metric definitions, seller-order grain, and data-quality handling.
 
@@ -48,9 +50,10 @@ See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table
 - CTEs and temporary tables
 - Window functions (`AVG() OVER()`, `LAG() OVER()`)
 - `SAFE_DIVIDE`, `DATE_DIFF`, `DATE_TRUNC`, `FORMAT_DATE`
-- `APPROX_QUANTILES` for seller-level distribution summaries
+- `APPROX_QUANTILES` for seller-level distribution summaries and segmentation thresholds
 - `CORR` for seller-level association analysis
 - Seller-order deduplication to prevent multi-item orders from receiving extra weight
+- Seller revenue aggregation from `order_items.price` without joining payments, avoiding order_items x payments fan-out
 - Tableau KPI cards, dual-axis monthly trend visualization, seller-risk scatter plot, and linear trend line
 
 ## 4. Key Insights
@@ -85,6 +88,19 @@ Among **425 sellers with at least 50 seller-orders**:
 
 **Business interpretation:** hand-off time is a useful operational risk signal, but not a sufficient standalone predictor. Some reliable sellers still have relatively long hand-off times, while some high-risk sellers have relatively short hand-off times, indicating that delivery reliability is multi-factor.
 
+### Revenue x Delivery-Risk Segmentation
+
+Using the same 425 qualifying sellers, seller revenue was calculated as the sum of `order_items.price` and split at the seller-population revenue median; delivery risk was split at the seller-population late-delivery-rate median.
+
+| Segment | Sellers | Segment revenue | Avg late-delivery rate | Avg orders / seller |
+|---|---:|---:|---:|---:|
+| High Revenue / High Risk | 116 | 4,571,185.21 | 9.38% | 268.6 |
+| High Revenue / Low Risk | 96 | 3,058,795.86 | 3.49% | 240.8 |
+| Low Revenue / High Risk | 99 | 610,916.18 | 10.19% | 89.2 |
+| Low Revenue / Low Risk | 114 | 755,739.07 | 2.97% | 95.3 |
+
+**Business interpretation:** the **High Revenue / High Risk** segment is the primary intervention group because it combines the largest revenue exposure with materially elevated late-delivery risk. The Low Revenue / High Risk group has an even higher average late rate, but represents substantially less revenue exposure.
+
 ### Cancellations
 
 - Monthly cancellation rates generally stayed between **0.2% and 1.3%**.
@@ -100,10 +116,13 @@ The Tableau Public dashboard summarizes the core findings in one view:
 - Monthly order volume vs. cancellation rate, including the Nov 2017 peak of 7,544 orders
 - Seller average hand-off time vs. late-delivery rate, with top/bottom reliability groups and an overall linear trend line
 
+**Dashboard period note:** KPI cards use the full available dataset, while the monthly trend is intentionally restricted to **Jan 2017-Aug 2018** to exclude sparse partial months that would distort month-over-month interpretation.
+
 [Open the interactive Tableau dashboard](https://public.tableau.com/views/E-CommerceSalesLogisticsAnalytics/Dashboard1?:language=en-US&publish=yes&:sid=&:redirect=auth&:display_count=n&:origin=viz_share_link)
 
 ## 6. Business Recommendations
 
+- Prioritize the **High Revenue / High Risk** seller segment for operational review because it combines elevated late-delivery risk with the greatest revenue exposure.
 - Monitor seller hand-off time as **one** delivery-risk signal rather than treating it as a standalone predictor.
 - Prioritize investigation of sellers with persistently elevated late-delivery rates and long hand-off patterns.
 - Complement average delivery time with **median, P90, on-time rate, and long-tail exception monitoring** in future KPI design.
@@ -117,8 +136,8 @@ The Tableau Public dashboard summarizes the core findings in one view:
 | Logistics analysis | Done |
 | Seller-level delivery-risk analysis | Done |
 | Seller-order grain correction & data-quality handling | Done |
+| Revenue x delivery-risk 2x2 segmentation | Done |
 | Tableau executive dashboard | Done |
-| Revenue x delivery-risk 2x2 segmentation | In progress |
 | Customer geography analysis | Planned |
 | Payment / AOV analysis | Planned |
 | Delayed delivery vs. repeat purchase | Planned |
@@ -131,6 +150,7 @@ The Tableau Public dashboard summarizes the core findings in one view:
 - **Causality:** the seller analysis describes association, not causal effects. Pearson `r = 0.408` does not imply that slower seller hand-off causes late delivery.
 - **Seasonality:** the Nov 2017 spike cannot be confirmed as recurring seasonality from the available time span.
 - **Fan-out risk:** no current SQL joins `order_items` and `payments`; if added later, those tables should be aggregated to order grain before joining to prevent duplicated aggregates.
+- **2x2 segmentation:** the four seller segments are prioritization buckets based on population medians, not causal classifications or externally validated risk thresholds.
 
 ## 9. Repository Structure
 
