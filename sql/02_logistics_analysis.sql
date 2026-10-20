@@ -114,16 +114,26 @@ ORDER BY order_count DESC;
 -- 2.6 Average Seller Hand-off Time
 -- Question: How long does it take a seller to hand the order to the carrier
 --           after payment approval?
+--
+-- Definition aligned with Part 3: calendar-day difference between approval
+-- and carrier hand-off, with logically impossible negative durations excluded
+-- from the average.
 -- ---------------------------------------------------------------------
+WITH handoff_base AS (
+  SELECT
+    DATE_DIFF(
+      DATE(order_delivered_carrier_date),
+      DATE(order_approved_at),
+      DAY
+    ) AS handoff_days
+  FROM `e-commerce-public-dataanalysis.olist.orders`
+  WHERE order_approved_at IS NOT NULL
+    AND order_delivered_carrier_date IS NOT NULL
+)
 SELECT
-  AVG(
-    DATE_DIFF(order_delivered_carrier_date, order_approved_at, DAY)
-  ) AS avg_handoff_days
-FROM `e-commerce-public-dataanalysis.olist.orders`
-WHERE order_approved_at IS NOT NULL
-  AND order_delivered_carrier_date IS NOT NULL;
-
--- Result: avg_handoff_days = 2.32
+  ROUND(AVG(handoff_days), 2) AS avg_handoff_days
+FROM handoff_base
+WHERE handoff_days >= 0;
 
 
 -- ---------------------------------------------------------------------
@@ -145,5 +155,5 @@ LIMIT 10;
 -- Data quality note: a small number of rows return negative handoff_days
 -- (e.g. -171, -9, -8), meaning the carrier pickup timestamp precedes the
 -- payment approval timestamp — logically impossible in a normal process.
--- Flagged as a data quality issue requiring timestamp validation upstream
--- (see docs/schema_notes.md).
+-- These values remain visible in the distribution for data-quality tracking,
+-- but are excluded from the 2.6 average and Part 3 hand-off metrics.
