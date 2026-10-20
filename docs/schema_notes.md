@@ -4,47 +4,44 @@
 
 | Table | Purpose in this analysis | Used in |
 |---|---|---|
-| `orders` | Order lifecycle: status, purchase / approval / carrier hand-off / delivery timestamps | `01`, `02`, `03` |
-| `order_items` | Line-item level detail; links orders to sellers via `seller_id` | `03` |
-| `customers` | `customer_id` to `customer_unique_id` mapping, used for repeat-purchase analysis | `01` |
+| `orders` | Order lifecycle: status, purchase / approval / carrier hand-off / delivery timestamps | `01`, `02`, `03`, `04`, `05`, `07` |
+| `order_items` | Line-item detail; links orders to sellers and supports seller revenue aggregation | `03` |
+| `customers` | `customer_id` to `customer_unique_id` mapping; repeat purchase and state-level geography | `01`, `04`, `05`, `07` |
+| `payments` | Order-level payment value and payment type after aggregation to order grain | `06` |
 
-## Tables not used yet (planned)
+## Additional available tables not required by the completed core workflow
 
-| Table | Planned use | Status |
-|---|---|---|
-| `payments` | Payment method and value per order (payment / AOV analysis) | Not implemented |
-| `geolocation` | Zip-code-level lat/long (customer geography analysis) | Not implemented |
-| `category_translation` | PT to EN category names. Needs a table that links `order_items` to a category name (see `products` below), so it cannot be joined through `order_items` alone | Not implemented |
-
-## Tables not available in the BigQuery table set used for this analysis
-
+- `geolocation`
+- `category_translation`
 - `products`
 - `sellers`
 - `order_reviews`
 
-**What happened:** query design initially assumed these three tables existed. They were not present in the BigQuery dataset used for the original analysis. After queries against them failed, the available tables in the BigQuery project were rechecked and the analysis scope was adjusted accordingly.
+These tables are available in the BigQuery dataset but are not required by the completed core SQL workflow. Customer geography in `05` uses `customers.customer_state`, so a geolocation join is unnecessary for the current state-level analysis.
 
-**Consequences:**
-- Seller-level analysis (Part 3) is derived from `order_items.seller_id` joined to `orders`, since no standalone `sellers` table was used in the original analysis. An order containing items from more than one seller is counted once for each seller represented in that order.
-- Within each seller, Part 3 now uses one row per seller-order, preventing multiple items from the same seller from weighting a single order more than once.
-- Category-level analysis is not implemented in the current SQL.
-- Repeat purchase rate (from `customers` + `orders`, query 1.8 in `01`) is used as a retention metric. It is not treated as a satisfaction measure, and its relationship with delivery delays has not yet been analyzed.
+## Schema re-verification
 
-**Takeaway:** verify the actual schema of the specific dataset instance before designing queries.
+Early query design was revised after rechecking the actual BigQuery dataset and the grain of each table. The final workflow is based on the tables and fields verified for each analysis rather than assuming joins from documentation alone.
+
+**Takeaway:** verify the schema and grain of the specific dataset instance before designing queries.
 
 ## Metric definitions as currently implemented
 
 | Metric | Query | Computation |
 |---|---|---|
-| Average delivery time, delivery buckets, most common delivery time, average hand-off time | `02` 2.1, 2.2, 2.3, 2.6 | `DATE_DIFF` applied to the raw timestamp columns |
-| On-time / late rate, days early or late, hand-off distribution | `02` 2.4, 2.5, 2.7 | Differences between `DATE()`-truncated values |
-| Seller hand-off, delivery time and late rate | `03` 3.0-3.5 | Differences between `DATE()`-truncated values at one row per seller-order |
+| Average delivery time, delivery buckets, most common delivery time | `02` 2.1-2.3 | Full-day difference between purchase and customer delivery |
+| On-time / late rate and days early/late | `02` 2.4-2.5 | Calendar-date comparison against estimated delivery date |
+| Average seller hand-off time | `02` 2.6 | Calendar-day difference between approval and carrier hand-off; negative durations excluded |
+| Hand-off distribution | `02` 2.7 | Calendar-day difference, with anomalies retained for visibility |
+| Seller hand-off, delivery time and late rate | `03` | Calendar-day differences at one row per seller-order; negative hand-off excluded from hand-off averages/rates |
+| Payment AOV | `06` | `payments` aggregated to one row per order before payment-method analysis |
+| First-delivery repeat comparison | `07` | First observed delivery classified late vs. on-time/early; repeat defined as 2+ observed orders |
 
-**Known inconsistency:** the overall hand-off metric in `02` 2.6 and the seller-level hand-off metric in `03` do not use exactly the same time definition, so their averages are not directly comparable. The definitions should be unified in a future cleanup pass.
+The seller hand-off definition in `02` is now aligned with the rule used in `03`: calendar-day differences with negative hand-off durations excluded from the average.
 
 ## Seller-level analysis grain and data-quality handling
 
-Part 3 now creates a distinct `seller_id` + `order_id` base table before calculating seller metrics. This makes late-delivery rates and hand-off rates seller-order based rather than item-row based.
+Part 3 creates a distinct `seller_id` + `order_id` base table before calculating seller metrics. This makes late-delivery rates and hand-off rates seller-order based rather than item-row based.
 
 Negative hand-off durations (`order_delivered_carrier_date` earlier than `order_approved_at`) are treated as data-quality defects. They are:
 
@@ -54,11 +51,16 @@ Negative hand-off durations (`order_delivered_carrier_date` earlier than `order_
 
 Among the 425 sellers with at least 50 seller-orders, 495 seller-order records have negative hand-off durations.
 
-## Fan-out risk (not yet implemented)
+## Fan-out prevention
 
-`order_items` and `payments` each have a one-to-many relationship with `orders`. A direct `JOIN` between `order_items` and `payments` on `order_id` can multiply rows for orders with multiple items and multiple payment records, inflating `COUNT` / `SUM` aggregates.
+`order_items` and `payments` each have a one-to-many relationship with `orders`. A direct `JOIN` between them on `order_id` can multiply rows for orders with multiple items and multiple payment records, inflating `COUNT` / `SUM` aggregates.
 
-**Planned mitigation:** aggregate each table to order level in separate CTEs before joining. No SQL in this repository currently joins `order_items` and `payments`, so this mitigation is documented as planned rather than implemented.
+The completed workflow avoids this risk in two ways:
+
+- seller revenue in `03` is aggregated from `order_items.price` without joining `payments`;
+- payment analysis in `06` aggregates `payments` to one row per order before calculating payment mix and AOV.
+
+No current SQL directly joins raw `order_items` rows to raw `payments` rows.
 
 ## Validated seller-level results
 
@@ -72,3 +74,10 @@ For sellers with at least 50 seller-orders:
 - **Pearson correlation between average hand-off time and late-delivery rate:** `r = 0.408`
 
 The correlation indicates a moderate positive association, but the overlap in hand-off times across high- and low-performing sellers shows that hand-off speed alone is not a sufficient predictor of delivery reliability.
+
+## Completed follow-up analyses
+
+- **Revenue x Delivery Risk:** 116 High Revenue / High Risk sellers; 4.57M seller revenue; 9.38% average late-delivery rate.
+- **Customer geography:** SP represents 41.98% of orders at 4.49% late-delivery rate; RJ represents 12.92% of orders at 12.10% late-delivery rate.
+- **Payment / AOV:** credit cards represent 75.40% of payment orders with 167.29 AOV; boleto represents 19.90% with 145.03 AOV.
+- **First delivery vs. repeat purchase:** repeat rate is 2.54% after a late first delivery vs. 3.13% after an on-time/early first delivery; this is observational, not causal.
