@@ -36,7 +36,7 @@ Early query design was revised after rechecking the actual BigQuery dataset and 
 | Seller hand-off, delivery time and late rate | `03` | Calendar-day differences at one row per seller-order; negative hand-off excluded from hand-off averages/rates |
 | Seller 2x2 thresholds | `03` 3.6 | `APPROX_QUANTILES(..., 2)` approximate medians for seller revenue and late-delivery rate |
 | Average payment value per order | `06` | `payments.payment_value` summed to one row per order, then averaged by primary payment type; this is payment value, not merchandise-only revenue |
-| First-delivery repeat comparison | `07` | First observed delivery classified late vs. on-time/early; repeat counted only when a later order is placed after the first delivery timestamp |
+| First-delivery repeat comparison | `07` | First observed delivery classified late vs. on-time/early; a customer repeats if any later order is placed after the first delivery timestamp |
 
 The seller hand-off definition in `02` is aligned with the rule used in `03`: calendar-day differences with negative hand-off durations excluded from the average.
 
@@ -77,15 +77,17 @@ The payment table covers 99,440 of the 99,441 orders. Three payment orders have 
 
 ## Repeat-purchase temporal rule
 
-The initial repeat-purchase comparison counted any customer with a second observed order, including customers who placed that order before the first delivery was completed. Because those purchases cannot have been influenced by the first delivery experience, `07` now counts a repeat only when the later order's purchase timestamp is **after** the first delivery timestamp.
+The initial repeat-purchase comparison counted any customer with a second observed order, including customers who placed that order before the first delivery was completed. Because those purchases cannot have been influenced by the first delivery experience, `07` now counts a customer as a post-delivery repeat customer only when **at least one later order** has a purchase timestamp after the first delivery timestamp.
+
+This distinction matters for customers with more than two orders: a second order may occur before first delivery, while a third or later order can still occur after first delivery and therefore qualify.
 
 Of 96,096 unique customers, 93,254 have a delivered first observed order and enter the analysis. The remaining 2,842 customers are excluded because their first observed order has no delivery timestamp.
 
-Recalculated post-delivery repeat rates:
+CSV reproduction of the current SQL logic gives:
 
-- **First order late:** 74 / 6,345 = **1.17%**
-- **First order on time / early:** 1,711 / 86,909 = **1.97%**
-- **Observed gap:** **0.80 percentage points**
+- **First order late:** 79 / 6,345 = **1.25%**
+- **First order on time / early:** 1,759 / 86,909 = **2.02%**
+- **Observed gap:** **0.77 percentage points**
 
 The result remains observational and does not establish that late delivery causes lower retention.
 
@@ -107,4 +109,4 @@ The correlation indicates a moderate positive association, but the overlap in ha
 - **Revenue x Delivery Risk:** using `APPROX_QUANTILES` approximate medians, 116 High Revenue / High Risk sellers; 4.57M seller revenue; 9.38% average late-delivery rate.
 - **Customer geography:** SP represents 41.98% of orders at 4.49% late-delivery rate; RJ represents 12.92% of orders at 12.10% late-delivery rate.
 - **Payment method / payment value:** credit cards represent 75.40% of payment orders with 167.29 average payment value per order; boleto represents 19.90% with 145.03.
-- **First delivery vs. post-delivery repeat purchase:** repeat rate is 1.17% after a late first delivery vs. 1.97% after an on-time/early first delivery; this is observational, not causal.
+- **First delivery vs. post-delivery repeat purchase:** repeat rate is 1.25% after a late first delivery vs. 2.02% after an on-time/early first delivery; this is observational, not causal.
