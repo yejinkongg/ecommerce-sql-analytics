@@ -135,6 +135,8 @@ SELECT
 FROM handoff_base
 WHERE handoff_days >= 0;
 
+-- Validated result: avg_handoff_days = 2.74
+
 
 -- ---------------------------------------------------------------------
 -- 2.7 Hand-off Time Distribution
