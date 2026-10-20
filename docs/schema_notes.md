@@ -83,7 +83,7 @@ This distinction matters for customers with more than two orders: a second order
 
 Of 96,096 unique customers, 93,254 have a delivered first observed order and enter the analysis. The remaining 2,842 customers are excluded because their first observed order has no delivery timestamp.
 
-CSV reproduction of the current SQL logic gives:
+BigQuery-validated post-delivery repeat rates:
 
 - **First order late:** 79 / 6,345 = **1.25%**
 - **First order on time / early:** 1,759 / 86,909 = **2.02%**
@@ -109,4 +109,4 @@ The correlation indicates a moderate positive association, but the overlap in ha
 - **Revenue x Delivery Risk:** using `APPROX_QUANTILES` approximate medians, 116 High Revenue / High Risk sellers; 4.57M seller revenue; 9.38% average late-delivery rate.
 - **Customer geography:** SP represents 41.98% of orders at 4.49% late-delivery rate; RJ represents 12.92% of orders at 12.10% late-delivery rate.
 - **Payment method / payment value:** credit cards represent 75.40% of payment orders with 167.29 average payment value per order; boleto represents 19.90% with 145.03.
-- **First delivery vs. post-delivery repeat purchase:** repeat rate is 1.25% after a late first delivery vs. 2.02% after an on-time/early first delivery; this is observational, not causal.
+- **First delivery vs. post-delivery repeat purchase:** BigQuery-validated repeat rate is 1.25% after a late first delivery vs. 2.02% after an on-time/early first delivery; this is observational, not causal.
