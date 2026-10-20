@@ -53,15 +53,18 @@ ORDER BY order_month;
 -- Purpose: delivery-time distribution and long-tail visualization
 -- Grain: one row per delivered order
 -- Recommended Tableau use: histogram / distribution chart
+--
+-- Delivery duration uses elapsed full 24-hour days between purchase and
+-- customer receipt, matching Part 2 and the 12.09-day KPI definition in 4.4.
 -- ---------------------------------------------------------------------
 SELECT
   order_id,
   DATE(order_purchase_timestamp) AS purchase_date,
   DATE(order_delivered_customer_date) AS delivered_date,
   DATE(order_estimated_delivery_date) AS estimated_delivery_date,
-  DATE_DIFF(
-    DATE(order_delivered_customer_date),
-    DATE(order_purchase_timestamp),
+  TIMESTAMP_DIFF(
+    order_delivered_customer_date,
+    order_purchase_timestamp,
     DAY
   ) AS delivery_days,
   DATE_DIFF(
@@ -75,10 +78,10 @@ SELECT
     ELSE 'Late'
   END AS delivery_status,
   CASE
-    WHEN DATE_DIFF(DATE(order_delivered_customer_date), DATE(order_purchase_timestamp), DAY) <= 7 THEN '0-7 days'
-    WHEN DATE_DIFF(DATE(order_delivered_customer_date), DATE(order_purchase_timestamp), DAY) BETWEEN 8 AND 14 THEN '8-14 days'
-    WHEN DATE_DIFF(DATE(order_delivered_customer_date), DATE(order_purchase_timestamp), DAY) BETWEEN 15 AND 30 THEN '15-30 days'
-    WHEN DATE_DIFF(DATE(order_delivered_customer_date), DATE(order_purchase_timestamp), DAY) BETWEEN 31 AND 70 THEN '31-70 days'
+    WHEN TIMESTAMP_DIFF(order_delivered_customer_date, order_purchase_timestamp, DAY) <= 7 THEN '0-7 days'
+    WHEN TIMESTAMP_DIFF(order_delivered_customer_date, order_purchase_timestamp, DAY) BETWEEN 8 AND 14 THEN '8-14 days'
+    WHEN TIMESTAMP_DIFF(order_delivered_customer_date, order_purchase_timestamp, DAY) BETWEEN 15 AND 30 THEN '15-30 days'
+    WHEN TIMESTAMP_DIFF(order_delivered_customer_date, order_purchase_timestamp, DAY) BETWEEN 31 AND 70 THEN '31-70 days'
     ELSE '70+ days'
   END AS delivery_bucket
 FROM `e-commerce-public-dataanalysis.olist.orders`
@@ -175,7 +178,8 @@ ORDER BY late_delivery_rate, total_orders DESC;
 -- Returns one row.
 --
 -- Average delivery time intentionally matches Part 2's validated definition:
--- DATE_DIFF on the original timestamps (12.09 days in the validated output).
+-- elapsed full 24-hour days between purchase and customer receipt
+-- (12.09 days in the validated output).
 -- Seller hand-off is not included as a dashboard KPI here because Part 2 and
 -- Part 3 currently use different hand-off definitions. Use 4.3 for seller
 -- hand-off analysis until those definitions are fully unified.
@@ -200,7 +204,7 @@ order_kpis AS (
     AVG(
       IF(
         order_delivered_customer_date IS NOT NULL,
-        DATE_DIFF(order_delivered_customer_date, order_purchase_timestamp, DAY),
+        TIMESTAMP_DIFF(order_delivered_customer_date, order_purchase_timestamp, DAY),
         NULL
       )
     ) AS avg_delivery_days
