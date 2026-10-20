@@ -16,13 +16,13 @@ A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, transl
 - **96,096 unique customers**
 - **6.77% late-delivery rate**
 - **12.09-day average delivery time**, while the most common delivery time was **7 days**
-- **3.12% repeat customer rate**
+- **3.12% repeat customer rate** across all observed orders
 - Among 425 sellers with at least 50 seller-orders, the **top 20 had 0.00-0.93% late-delivery rates**, while the **bottom 20 had 15.32-30.14%**
 - Seller average hand-off time and late-delivery rate showed a **moderate positive association (Pearson r = 0.408)**
-- In the Revenue x Delivery-Risk segmentation, **116 High Revenue / High Risk sellers accounted for 4.57M in seller revenue and averaged a 9.38% late-delivery rate**
+- Using **APPROX_QUANTILES-based approximate median thresholds**, **116 High Revenue / High Risk sellers accounted for 4.57M in seller revenue and averaged a 9.38% late-delivery rate**
 - **SP accounted for 41.98% of orders** with a 4.49% late-delivery rate, while **RJ accounted for 12.92% of orders** with a much higher 12.10% late-delivery rate
-- **Credit cards accounted for 75.40% of payment orders** and had the highest AOV among major payment methods at **167.29**
-- Customers whose first observed delivery was late had a **2.54% repeat-purchase rate**, versus **3.13%** for customers whose first delivery was on time or early
+- **Credit cards accounted for 75.40% of payment orders** and had the highest **average payment value per order** among major payment methods at **167.29**
+- Among customers with a delivered first observed order, **post-delivery repeat purchase was 1.17% after a late first delivery vs. 1.97% after an on-time/early first delivery**
 
 The goal was not just to write correct SQL, but to **translate raw numbers into business decisions while documenting metric definitions, data-quality issues, and analytical limitations.**
 
@@ -36,8 +36,8 @@ This project uses e-commerce operations data to answer:
 - How much does seller hand-off performance relate to delivery reliability?
 - Which sellers combine high commercial value with elevated delivery risk?
 - Which customer geographies combine high order exposure with elevated delivery risk?
-- Which payment methods dominate order volume, and how does AOV differ by payment type?
-- Is first-delivery performance associated with later repeat purchasing?
+- Which payment methods dominate order volume, and how does average payment value per order differ by payment type?
+- Is first-delivery performance associated with later **post-delivery** repeat purchasing?
 - What operational or customer-growth actions do these findings support?
 
 ## 2. Dataset
@@ -45,7 +45,7 @@ This project uses e-commerce operations data to answer:
 - **Olist Brazilian E-Commerce Public Dataset** (Kaggle)
 - Analysis period: Sep 2016 - Oct 2018 (some months have incomplete data; see Limitations)
 - Tables used in the current SQL: `orders`, `order_items`, `customers`, `payments`
-- Additional tables available for future extensions: `geolocation`, `category_translation`, `products`, `sellers`, `order_reviews`
+- Additional tables available in the current BigQuery dataset after later re-upload / re-verification: `geolocation`, `category_translation`, `products`, `sellers`, `order_reviews`
 
 See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table availability, metric definitions, seller-order grain, and data-quality handling.
 
@@ -56,13 +56,13 @@ See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table
 - CTEs and temporary tables
 - Window functions (`AVG() OVER()`, `LAG() OVER()`, `SUM() OVER()`, `ROW_NUMBER() OVER()`, `COUNT() OVER()`)
 - `SAFE_DIVIDE`, `DATE_DIFF`, `TIMESTAMP_DIFF`, `DATE_TRUNC`, `FORMAT_DATE`
-- `APPROX_QUANTILES` for seller-level distribution summaries and segmentation thresholds
+- `APPROX_QUANTILES` for seller-level distribution summaries and approximate segmentation thresholds
 - `CORR` for seller-level association analysis
 - Seller-order deduplication to prevent multi-item orders from receiving extra weight
 - Seller revenue aggregation from `order_items.price` without joining payments, avoiding order_items x payments fan-out
 - Payment aggregation to one row per order before payment-method analysis to avoid duplication
 - State-level demand and delivery-risk comparison using dynamic order-share calculations
-- Customer-level order sequencing to compare first-delivery experience with later repeat purchasing
+- Customer-level order sequencing to compare first-delivery experience with **orders placed after that first delivery**
 - Tableau KPI cards, dual-axis monthly trend visualization, seller-risk scatter plot, and linear trend line
 
 ## 4. Key Insights
@@ -89,8 +89,8 @@ The seller analysis was rebuilt at **one row per seller-order** so that multiple
 
 Among **425 sellers with at least 50 seller-orders**:
 
-- Median seller average hand-off time: **2.14 days**
-- Median late-delivery rate: **5.69%**
+- Median seller average hand-off time: **2.14 days** (`APPROX_QUANTILES`)
+- Median late-delivery rate: **5.69%** (`APPROX_QUANTILES`)
 - Top 20 sellers by delivery reliability: **0.00-0.93% late-delivery rate**, with average hand-off times of **0.67-4.73 days**
 - Bottom 20 sellers by delivery reliability: **15.32-30.14% late-delivery rate**, with average hand-off times of **1.40-15.14 days**
 - Average hand-off time and late-delivery rate showed a **moderate positive association (Pearson r = 0.408)**
@@ -99,7 +99,7 @@ Among **425 sellers with at least 50 seller-orders**:
 
 ### Revenue x Delivery-Risk Segmentation
 
-Using the same 425 qualifying sellers, seller revenue was calculated as the sum of `order_items.price` and split at the seller-population revenue median; delivery risk was split at the seller-population late-delivery-rate median.
+Using the same 425 qualifying sellers, seller revenue was calculated as the sum of `order_items.price`. Revenue and delivery risk were split using **approximate median thresholds from `APPROX_QUANTILES(..., 2)`**. Because these are approximate quantiles, sellers very close to the boundary can differ from an exact-median split.
 
 | Segment | Sellers | Segment revenue | Avg late-delivery rate | Avg orders / seller |
 |---|---:|---:|---:|---:|
@@ -124,31 +124,35 @@ Smaller states such as **AL (21.41%)** and **MA (17.43%)** have much higher late
 
 **Business interpretation:** **RJ is the clearest geography for operational investigation** because it combines meaningful order exposure with a late-delivery rate well above the overall 6.77% benchmark. SP is the dominant demand market but performs comparatively well on delivery reliability. Very small high-late-rate states should be monitored as localized service risks rather than treated as platform-wide drivers.
 
-### Payment Method & AOV
+### Payment Method & Average Payment Value per Order
 
-Payment behavior is concentrated in a few methods:
+`payment_value` is summed to order level, so the metric below is **average payment value per order**, not merchandise-only item revenue. It can include freight and financing/installment-related charges captured in the payment value.
 
-| Payment type | Orders | Order share | AOV | Total payment value |
+| Payment type | Orders | Order share | Avg payment value / order | Total payment value |
 |---|---:|---:|---:|---:|
 | Credit card | 74,975 | 75.40% | 167.29 | 12,542,527.15 |
 | Boleto | 19,784 | 19.90% | 145.03 | 2,869,361.27 |
 | Voucher | 3,151 | 3.17% | 120.29 | 379,043.91 |
 | Debit card | 1,527 | 1.54% | 142.72 | 217,939.79 |
 
-**Business interpretation:** credit cards dominate both order volume and payment value and also show the highest AOV among the major payment methods. Boleto remains an important secondary method at nearly one-fifth of orders. These differences are descriptive, not causal; product mix, customer mix, promotions, and order composition may contribute to AOV differences.
+The summary table omits **3 `not_defined` payment orders**. Payment records cover **99,440 of 99,441 orders**, so one order with no payment record is absent from this analysis.
 
-### First Delivery Experience & Repeat Purchase
+**Business interpretation:** credit cards dominate both order volume and payment value and also show the highest average payment value per order among the major payment methods. Boleto remains an important secondary method at nearly one-fifth of payment orders. These differences are descriptive, not causal; product mix, customer mix, promotions, freight, financing, and order composition may contribute.
 
-Customers were grouped by whether their **first observed delivered order** arrived late or on time/early, then compared on whether they later placed another order:
+### First Delivery Experience & Post-Delivery Repeat Purchase
 
-| First delivery status | Customers | Repeat customers | Repeat rate |
+To make the retention comparison temporally valid, a repeat purchase is counted only when a later order is placed **after the customer's first observed delivery timestamp**. This excludes follow-up orders that occurred before the customer could have experienced the first delivery.
+
+| First delivery status | Eligible customers | Repeat customers after delivery | Post-delivery repeat rate |
 |---|---:|---:|---:|
-| First order late | 6,345 | 161 | 2.54% |
-| First order on time / early | 86,909 | 2,716 | 3.13% |
+| First order late | 6,345 | 74 | 1.17% |
+| First order on time / early | 86,909 | 1,711 | 1.97% |
 
-The observed repeat-purchase rate is **0.59 percentage points lower** among customers whose first delivery was late.
+The observed post-delivery repeat-purchase rate is **0.80 percentage points lower** among customers whose first delivery was late. Of 96,096 unique customers, **93,254** have a delivered first observed order and enter this comparison; **2,842** whose first observed order lacks a delivery timestamp are excluded.
 
-**Business interpretation:** the direction is consistent with poorer first-delivery experiences being associated with weaker retention, but the difference is modest and observational. It should be treated as a retention-risk signal rather than proof that late delivery causes lower repeat purchase.
+The earlier unrestricted comparison (2.54% vs. 3.13%) mixed in customers who reordered before the first delivery was completed. Among those earlier repeat customers, **1,092 of 2,877 (38.0%)** placed the next order before first delivery, so the post-delivery definition is used as the primary retention result.
+
+**Business interpretation:** the direction is consistent with poorer first-delivery experiences being associated with weaker retention, but the result is still observational. It should be treated as a retention-risk signal rather than proof that late delivery causes lower repeat purchase.
 
 ### Cancellations
 
@@ -173,7 +177,7 @@ The Tableau Public dashboard summarizes the core findings in one view:
 
 - Prioritize the **High Revenue / High Risk** seller segment for operational review because it combines elevated late-delivery risk with the greatest revenue exposure.
 - Investigate **RJ delivery performance** because it combines high order exposure with a 12.10% late-delivery rate, well above the platform average.
-- Treat **credit card and boleto** as the most commercially important payment methods because they account for the overwhelming majority of order volume and payment value.
+- Treat **credit card and boleto** as the most commercially important payment methods because they account for the overwhelming majority of payment-order volume and payment value.
 - Treat a **late first delivery** as a potential retention-risk signal and investigate whether the relationship persists after controlling for geography, product mix, seller mix, and customer tenure.
 - Monitor seller hand-off time as **one** delivery-risk signal rather than treating it as a standalone predictor.
 - Prioritize investigation of sellers with persistently elevated late-delivery rates and long hand-off patterns.
@@ -189,22 +193,22 @@ The Tableau Public dashboard summarizes the core findings in one view:
 | Seller-order grain correction & data-quality handling | Done |
 | Revenue x delivery-risk 2x2 segmentation | Done |
 | Customer geography analysis | Done |
-| Payment / AOV analysis | Done |
-| Delayed delivery vs. repeat purchase | Done |
+| Payment method / average payment value analysis | Done |
+| Delayed delivery vs. post-delivery repeat purchase | Done |
 | Tableau executive dashboard | Done |
 
 ## 8. Limitations & Retrospective
 
-- **Schema assumptions:** the analysis scope was revised after checking the tables available in the BigQuery environment used for the project.
-- **Metric consistency:** seller hand-off now uses the same calendar-day definition and negative-value exclusion rule in Parts 2 and 3.
+- **Schema assumptions:** the analysis scope was revised after checking the tables available in the BigQuery environment used for the project. Additional source tables were later re-uploaded / re-verified, but the completed core workflow only requires `orders`, `order_items`, `customers`, and `payments`.
+- **Metric consistency:** seller hand-off now uses the same calendar-day definition and negative-value exclusion rule in Parts 2 and 3; the validated overall average in `02` is **2.74 days**.
 - **Negative hand-off records:** 495 seller-order records among the 425 qualifying sellers had logically impossible negative hand-off durations. They are retained in order/delivery counts but excluded from hand-off averages and hand-off-rate denominators.
 - **Causality:** the seller analysis describes association, not causal effects. Pearson `r = 0.408` does not imply that slower seller hand-off causes late delivery.
 - **Seasonality:** the Nov 2017 spike cannot be confirmed as recurring seasonality from the available time span.
 - **Fan-out risk:** payment records can repeat by order; `06_payment_aov.sql` aggregates them to order grain before payment-method analysis. Any future query joining `order_items` and `payments` should aggregate both sides before joining.
-- **2x2 segmentation:** the four seller segments are prioritization buckets based on population medians, not causal classifications or externally validated risk thresholds.
+- **2x2 segmentation:** the four seller segments are prioritization buckets based on **approximate medians from `APPROX_QUANTILES`**, not exact-median splits, causal classifications, or externally validated risk thresholds. Sellers near a threshold can move between groups under an exact percentile calculation.
 - **Geography:** state-level late-delivery rates identify where reliability differs, but they do not isolate the underlying cause; distance, carrier mix, seller mix, or other factors may contribute.
-- **Payment/AOV:** payment-method differences in AOV are descriptive and should not be interpreted as causal effects of payment choice.
-- **Repeat purchase:** the late-first-delivery comparison is observational and does not control for confounding factors or unequal observation windows. The 0.59 percentage-point gap should be treated as an association, not a causal retention effect.
+- **Payment value:** `payment_value` represents the amount paid rather than merchandise-only revenue and can include freight and financing/installment-related charges. Three `not_defined` payment orders are omitted from the summary table, and one of the 99,441 orders has no payment record.
+- **Repeat purchase:** the primary comparison now counts only orders placed after first delivery. It excludes **2,842 customers** whose first observed order has no delivery timestamp. The 1.17% vs. 1.97% gap remains observational and does not control for confounding factors or unequal customer observation windows.
 
 ## 9. Repository Structure
 
