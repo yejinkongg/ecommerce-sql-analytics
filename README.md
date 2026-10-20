@@ -45,7 +45,7 @@ This project uses e-commerce operations data to answer:
 - **Olist Brazilian E-Commerce Public Dataset** (Kaggle)
 - Analysis period: Sep 2016 - Oct 2018 (some months have incomplete data; see Limitations)
 - Tables used in the current SQL: `orders`, `order_items`, `customers`, `payments`
-- Additional tables available for future extensions: `geolocation`, `category_translation`
+- Additional tables available for future extensions: `geolocation`, `category_translation`, `products`, `sellers`, `order_reviews`
 
 See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table availability, metric definitions, seller-order grain, and data-quality handling.
 
@@ -55,7 +55,7 @@ See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table
 - **Tableau Public** for the executive dashboard
 - CTEs and temporary tables
 - Window functions (`AVG() OVER()`, `LAG() OVER()`, `SUM() OVER()`, `ROW_NUMBER() OVER()`, `COUNT() OVER()`)
-- `SAFE_DIVIDE`, `DATE_DIFF`, `DATE_TRUNC`, `FORMAT_DATE`
+- `SAFE_DIVIDE`, `DATE_DIFF`, `TIMESTAMP_DIFF`, `DATE_TRUNC`, `FORMAT_DATE`
 - `APPROX_QUANTILES` for seller-level distribution summaries and segmentation thresholds
 - `CORR` for seller-level association analysis
 - Seller-order deduplication to prevent multi-item orders from receiving extra weight
@@ -179,7 +179,7 @@ The Tableau Public dashboard summarizes the core findings in one view:
 - Prioritize investigation of sellers with persistently elevated late-delivery rates and long hand-off patterns.
 - Complement average delivery time with **median, P90, on-time rate, and long-tail exception monitoring** in future KPI design.
 
-## 7. Status & Roadmap
+## 7. Completed Scope
 
 | Item | Status |
 |---|---|
@@ -196,7 +196,7 @@ The Tableau Public dashboard summarizes the core findings in one view:
 ## 8. Limitations & Retrospective
 
 - **Schema assumptions:** the analysis scope was revised after checking the tables available in the BigQuery environment used for the project.
-- **Metric consistency:** overall hand-off time in `02` and seller-level hand-off time in `03` do not yet use exactly the same time definition, so they should not be directly compared.
+- **Metric consistency:** seller hand-off now uses the same calendar-day definition and negative-value exclusion rule in Parts 2 and 3.
 - **Negative hand-off records:** 495 seller-order records among the 425 qualifying sellers had logically impossible negative hand-off durations. They are retained in order/delivery counts but excluded from hand-off averages and hand-off-rate denominators.
 - **Causality:** the seller analysis describes association, not causal effects. Pearson `r = 0.408` does not imply that slower seller hand-off causes late delivery.
 - **Seasonality:** the Nov 2017 spike cannot be confirmed as recurring seasonality from the available time span.
