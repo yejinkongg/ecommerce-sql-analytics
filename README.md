@@ -1,13 +1,24 @@
 # E-Commerce Sales & Logistics Analytics
 
-A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, translating demand, logistics, and cancellation patterns into business-relevant insights.
+A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, translating demand, logistics, cancellation, and seller-level delivery patterns into business-relevant insights.
 
-> **Status: In Progress (May 2026 – Present)**
+> **Status: Core analysis complete; customer geography and payment/AOV analysis are planned next.**
 
 > Full write-up (project journey, debugging process, and detailed findings): [Notion](https://app.notion.com/p/E-Commerce-Sales-Logistics-Analytics-Project-39b7c6f38f688127838ce00127e455d4)
 
-> Demand, Logistics, and Root Cause sections are complete. Customer geography and payment analysis are in progress (see Roadmap below).
 ---
+
+## At a Glance
+
+- **99,441 orders analyzed**
+- **96,096 unique customers**
+- **6.77% late-delivery rate**
+- **12.09-day average delivery time**, while the most common delivery time was **7 days**
+- **3.12% repeat customer rate**
+- Among 425 sellers with at least 50 seller-orders, the **top 20 had 0.00-0.93% late-delivery rates**, while the **bottom 20 had 15.32-30.14%**
+- Seller average hand-off time and late-delivery rate showed a **moderate positive association (Pearson r = 0.408)**
+
+The goal was not just to write correct SQL, but to **translate raw numbers into business decisions while documenting metric definitions, data-quality issues, and analytical limitations.**
 
 ## 1. Project Purpose
 
@@ -15,77 +26,106 @@ This project uses e-commerce operations data to answer:
 
 - How is order demand trending, and how should that trend be interpreted?
 - How reliable is delivery performance, and what metrics actually reflect it?
-- Are delivery delays and cancellations systemic issues, or isolated exceptions?
-- What operational or marketing actions do these findings support?
-
-The goal was not just to write correct SQL, but to **translate raw numbers into business decisions.**
+- Are delivery delays and cancellations systemic issues, or concentrated exceptions?
+- How much does seller hand-off performance relate to delivery reliability?
+- What operational or customer-growth actions do these findings support?
 
 ## 2. Dataset
 
 - **Olist Brazilian E-Commerce Public Dataset** (Kaggle)
-  https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce
-- Analysis period: Sep 2016 – Oct 2018 (some months have incomplete data — see Limitations)
-- 6 tables actually used: `orders`, `order_items`, `category_translation`, `payments`, `geolocation`, `customers`
-  (`products`, `sellers`, and `order_reviews` are not present in this dataset version — the analysis scope was adjusted accordingly; see Limitations)
+- Analysis period: Sep 2016 - Oct 2018 (some months have incomplete data; see Limitations)
+- Tables used in the current SQL: `orders`, `order_items`, `customers`
+- Planned for future analysis: `payments`, `geolocation`, `category_translation`
+
+See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table availability, metric definitions, seller-order grain, and data-quality handling.
 
 ## 3. Tools & Techniques
 
 - **BigQuery Standard SQL**
-- CTEs, Window Functions (`AVG() OVER()`, `LAG() OVER()`)
-- `SAFE_DIVIDE`, `DATE_DIFF`, `DATE_TRUNC`, `FORMAT_DATE`, `APPROX_QUANTILES`
-- Fan-out prevention logic applied when joining multi-row tables (e.g. `order_items` × `payments`)
+- CTEs and temporary tables
+- Window functions (`AVG() OVER()`, `LAG() OVER()`)
+- `SAFE_DIVIDE`, `DATE_DIFF`, `DATE_TRUNC`, `FORMAT_DATE`
+- `APPROX_QUANTILES` for seller-level distribution summaries
+- `CORR` for seller-level association analysis
+- Seller-order deduplication to prevent multi-item orders from receiving extra weight
 
-## 4. Key Insights (Business Analyst Perspective)
+## 4. Key Insights
 
 ### Demand
-- Order volume grew steadily from early 2017, then **spiked +62.9% month-over-month in November 2017** (4,631 → 7,544 orders), followed by a -24.8% pullback in December. With only one year of data, this can't be confirmed as recurring seasonality, but it flags a need to plan for peak-season demand and promotions.
-- From Jan–Aug 2018, order volume held steady in the 6,700–7,300 range (±10% MoM) — a shift from growth phase to a maturity/plateau phase.
-- **Repeat purchase rate is only 3.12%** (avg. 1.03 orders per customer), meaning revenue growth is heavily dependent on new customer acquisition rather than retention. This suggests rising long-term CAC risk and supports prioritizing retention tactics (post-purchase coupons, membership programs).
+
+- Order volume grew steadily from early 2017, then **spiked 62.9% month over month in November 2017** (4,631 -> 7,544 orders), followed by a **24.8% pullback** in December.
+- From Jan-Aug 2018, monthly order volume remained around **6,700-7,300 orders**.
+- Average orders per customer were **1.03**, and only **3.12% of customers** placed two or more orders.
+
+**Business interpretation:** growth appears heavily dependent on new-customer acquisition, supporting further investigation into retention and repeat-purchase opportunities.
 
 ### Logistics
-- Of all completed deliveries (96,476), **93.23% arrived on or before the estimated delivery date** (6.77% delayed) — indicating high delivery reliability overall.
-- **Average delivery time is 12.09 days, but the actual mode is 7 days**, with most orders concentrated in the 6–9 day range. The average is skewed upward by a long tail of severely delayed orders — suggesting the KPI should be **redefined using median or P90 instead of mean**.
-- Deliveries delayed 30+ days account for only ~4.1% of all orders — reframing the logistics problem from "systemic failure" to "a small number of extreme cases." This implies improvement efforts should target long-tail delay elimination rather than reducing the average.
 
-### Root Cause — Seller Segmentation
-- Comparing seller performance revealed a clear split: **top-performing sellers had an average hand-off time of 0.6–2 days and a 0–1% late delivery rate**, while **problem sellers averaged 5–15 days hand-off time with a 15–32.1% late delivery rate**.
-- Hand-off time (time from order approval to carrier pickup) can serve as a **leading indicator** for delivery risk — flagging slow-hand-off sellers early could allow proactive intervention before delivery delays occur.
-- Exceptions exist (some sellers with slow hand-off still had 0% late deliveries), so delivery performance is treated as multi-factor (seller, carrier, estimated-delivery-date policy) rather than attributed to sellers alone.
+- Of 96,476 completed deliveries, **93.23% arrived on or before the estimated delivery date** and **6.77% were late**.
+- **Average delivery time was 12.09 days**, but the **mode was 7 days**, with most deliveries concentrated around 6-9 days.
+- A small long tail of severely delayed orders pulls the mean upward, so average delivery time alone does not fully describe the typical customer experience.
+
+**Business interpretation:** median, P90, on-time delivery rate, and long-tail exception rates would be useful complementary KPIs in future analysis.
+
+### Root Cause - Seller-Level Delivery Risk
+
+The seller analysis was rebuilt at **one row per seller-order** so that multiple items from the same seller do not overweight a single order.
+
+Among **425 sellers with at least 50 seller-orders**:
+
+- Median seller average hand-off time: **2.14 days**
+- Median late-delivery rate: **5.69%**
+- Top 20 sellers by delivery reliability: **0.00-0.93% late-delivery rate**, with average hand-off times of **0.67-4.73 days**
+- Bottom 20 sellers by delivery reliability: **15.32-30.14% late-delivery rate**, with average hand-off times of **1.40-15.14 days**
+- Average hand-off time and late-delivery rate showed a **moderate positive association (Pearson r = 0.408)**
+
+**Business interpretation:** hand-off time is a useful operational risk signal, but not a sufficient standalone predictor. Some reliable sellers still have relatively long hand-off times, while some high-risk sellers have relatively short hand-off times, indicating that delivery reliability is multi-factor.
 
 ### Cancellations
-- Monthly cancellation rates stayed low overall, generally between 0.2% and 1.3%. Notably, **during the month of steepest demand growth (Nov 2017, +62.9% MoM), the cancellation rate actually dropped from 0.56% to 0.49%** — indicating that the demand surge did not come at the cost of operational quality.
-- However, no cancellation-reason or cancellation-timestamp data exists, so a causal link between delivery delays and cancellations could not be tested (see Limitations).
 
-## 5. Status & Roadmap
+- Monthly cancellation rates generally stayed between **0.2% and 1.3%**.
+- During the largest demand spike in Nov 2017, cancellation rate decreased from **0.56% to 0.49%** even as order volume increased 62.9% MoM.
+
+**Limitation:** the available fields do not establish a causal relationship between delivery delays and cancellations.
+
+## 5. Business Recommendations
+
+- Monitor seller hand-off time as **one** delivery-risk signal rather than treating it as a standalone predictor.
+- Prioritize investigation of sellers with persistently elevated late-delivery rates and long hand-off patterns.
+- Complement average delivery time with **median, P90, on-time rate, and long-tail exception monitoring** in future KPI design.
+- Investigate retention opportunities given the **3.12% repeat customer rate**.
+
+## 6. Status & Roadmap
 
 | Item | Status |
 |---|---|
-| Demand Analysis (order volume trend, repeat purchase rate) | Done |
-| Logistics Analysis (delivery time, delay rate, hand-off time) | Done |
-| Root Cause Analysis (seller segmentation) | Done |
-| Customer geography analysis (`customer_state`) | Planned |
+| Demand analysis | Done |
+| Logistics analysis | Done |
+| Seller-level delivery-risk analysis | Done |
+| Seller-order grain correction & data-quality handling | Done |
+| Revenue x delivery-risk 2x2 segmentation | In progress |
+| Customer geography analysis | Planned |
 | Payment / AOV analysis | Planned |
-| Delayed delivery vs. repeat purchase rate (proxy for missing `order_reviews`) | Planned |
+| Delayed delivery vs. repeat purchase | Planned |
 
-## 6. Limitations & Retrospective
+## 7. Limitations & Retrospective
 
-Documented honestly, as part of the analysis process:
+- **Schema assumptions:** the analysis scope was revised after checking the tables available in the BigQuery environment used for the project.
+- **Metric consistency:** overall hand-off time in `02` and seller-level hand-off time in `03` do not yet use exactly the same time definition, so they should not be directly compared.
+- **Negative hand-off records:** 495 seller-order records among the 425 qualifying sellers had logically impossible negative hand-off durations. They are retained in order/delivery counts but excluded from hand-off averages and hand-off-rate denominators.
+- **Causality:** the seller analysis describes association, not causal effects. Pearson `r = 0.408` does not imply that slower seller hand-off causes late delivery.
+- **Seasonality:** the Nov 2017 spike cannot be confirmed as recurring seasonality from the available time span.
+- **Fan-out risk:** no current SQL joins `order_items` and `payments`; if added later, those tables should be aggregated to order grain before joining to prevent duplicated aggregates.
 
-- **Incorrect schema assumptions**: The analysis initially assumed `products`, `sellers`, and `order_reviews` tables existed. They don't exist in this dataset version, requiring the analysis scope to be rebuilt around the 6 tables that actually exist. Takeaway: **always verify schema directly before writing queries**, rather than assuming based on prior familiarity with similar datasets.
-- **Causality not established**: The relationship between delivery delay and cancellation, or delivery delay and repeat purchase, could not be tested — even at a correlational level — due to the absence of cancellation-reason and cancellation-timestamp fields. These relationships are described as "possible" or "hypothesized" in the analysis, never stated as confirmed.
-- **Data quality issue identified**: A small number of orders show `order_delivered_carrier_date` preceding `order_approved_at` (e.g., -171 days), which is logically impossible in a normal process. Flagged as a data quality issue that would require timestamp validation in a production ETL pipeline.
-- **Single-year seasonality caveat**: The November 2017 spike is interpreted as a possible seasonal/promotional effect, but the dataset only spans part of 2016–2018, so this cannot be validated against a second cycle. Treated as an open hypothesis, not a conclusion.
-- **Fan-out risk in joins**: Joining `order_items` and `payments` creates a many-to-many relationship that can duplicate rows during aggregation; pre-aggregating in separate CTEs was used to prevent this.
+## 8. Repository Structure
 
-## 7. Repository Structure
-
-```
+```text
 ├── sql/
 │   ├── 01_demand_analysis.sql
 │   ├── 02_logistics_analysis.sql
 │   └── 03_root_cause_analysis.sql
 ├── docs/
 │   └── schema_notes.md
-└── report/
-    └── ECommerce_Public_Data_Analysis.pdf
+├── README.md
+└── LICENSE
 ```
