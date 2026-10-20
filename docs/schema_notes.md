@@ -16,16 +16,16 @@
 | `geolocation` | Zip-code-level lat/long (customer geography analysis) | Not implemented |
 | `category_translation` | PT to EN category names. Needs a table that links `order_items` to a category name (see `products` below), so it cannot be joined through `order_items` alone | Not implemented |
 
-## Tables not available in the BigQuery dataset used here
+## Tables not available in the BigQuery table set used for this analysis
 
 - `products`
 - `sellers`
 - `order_reviews`
 
-**What happened:** query design initially assumed these three tables existed. They were not present in the BigQuery dataset used for this analysis. After queries against them failed, the actual table list in the BigQuery project was checked directly and the analysis scope was rebuilt around the tables that were available.
+**What happened:** query design initially assumed these three tables existed. They were not present in the BigQuery dataset used for this analysis. After queries against them failed, the available tables in the BigQuery project were rechecked and the analysis scope was adjusted accordingly.
 
 **Consequences:**
-- Seller-level analysis (Part 3) is derived from `order_items.seller_id` joined to `orders`, since there is no standalone `sellers` table. An order containing items from more than one seller is counted for each of those sellers.
+- Seller-level analysis (Part 3) is derived from `order_items.seller_id` joined to `orders`, since there is no standalone `sellers` table. An order containing items from more than one seller is counted for each of those sellers. Within each seller, the revised analysis will use one row per seller-order to prevent multiple items from the same seller from weighting that order more than once.
 - Category-level analysis is not possible without `products`.
 - Review-based satisfaction analysis is not possible without `order_reviews`. Repeat purchase rate (from `customers` + `orders`, query 1.8 in `01`) is computed as a retention metric. It is not a satisfaction measure, and its link to delivery delays has not been analyzed yet (planned).
 
