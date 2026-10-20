@@ -1,8 +1,8 @@
 # E-Commerce Sales & Logistics Analytics
 
-A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, translating demand, logistics, cancellation, seller-level delivery patterns, and customer geography into business-relevant insights.
+A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, translating demand, logistics, cancellation, seller-level delivery patterns, customer geography, and payment behavior into business-relevant insights.
 
-> **Status: Core analysis and Tableau dashboard complete; payment/AOV and repeat-purchase follow-up analyses remain.**
+> **Status: Core analysis and Tableau dashboard complete; delayed delivery vs. repeat-purchase follow-up remains.**
 
 > Interactive dashboard: [Tableau Public](https://public.tableau.com/views/E-CommerceSalesLogisticsAnalytics/Dashboard1?:language=en-US&publish=yes&:sid=&:redirect=auth&:display_count=n&:origin=viz_share_link)
 >
@@ -21,6 +21,7 @@ A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, transl
 - Seller average hand-off time and late-delivery rate showed a **moderate positive association (Pearson r = 0.408)**
 - In the Revenue x Delivery-Risk segmentation, **116 High Revenue / High Risk sellers accounted for 4.57M in seller revenue and averaged a 9.38% late-delivery rate**
 - **SP accounted for 41.98% of orders** with a 4.49% late-delivery rate, while **RJ accounted for 12.92% of orders** with a much higher 12.10% late-delivery rate
+- **Credit cards accounted for 75.40% of payment orders** and had the highest AOV among major payment methods at **167.29**
 
 The goal was not just to write correct SQL, but to **translate raw numbers into business decisions while documenting metric definitions, data-quality issues, and analytical limitations.**
 
@@ -34,14 +35,15 @@ This project uses e-commerce operations data to answer:
 - How much does seller hand-off performance relate to delivery reliability?
 - Which sellers combine high commercial value with elevated delivery risk?
 - Which customer geographies combine high order exposure with elevated delivery risk?
+- Which payment methods dominate order volume, and how does AOV differ by payment type?
 - What operational or customer-growth actions do these findings support?
 
 ## 2. Dataset
 
 - **Olist Brazilian E-Commerce Public Dataset** (Kaggle)
 - Analysis period: Sep 2016 - Oct 2018 (some months have incomplete data; see Limitations)
-- Tables used in the current SQL: `orders`, `order_items`, `customers`
-- Additional tables reserved for follow-up analysis: `payments`, `geolocation`, `category_translation`
+- Tables used in the current SQL: `orders`, `order_items`, `customers`, `payments`
+- Additional tables reserved for future extensions: `geolocation`, `category_translation`
 
 See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table availability, metric definitions, seller-order grain, and data-quality handling.
 
@@ -56,6 +58,7 @@ See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table
 - `CORR` for seller-level association analysis
 - Seller-order deduplication to prevent multi-item orders from receiving extra weight
 - Seller revenue aggregation from `order_items.price` without joining payments, avoiding order_items x payments fan-out
+- Payment aggregation to one row per order before payment-method analysis to avoid duplication
 - State-level demand and delivery-risk comparison using dynamic order-share calculations
 - Tableau KPI cards, dual-axis monthly trend visualization, seller-risk scatter plot, and linear trend line
 
@@ -118,6 +121,19 @@ Smaller states such as **AL (21.41%)** and **MA (17.43%)** have much higher late
 
 **Business interpretation:** **RJ is the clearest geography for operational investigation** because it combines meaningful order exposure with a late-delivery rate well above the overall 6.77% benchmark. SP is the dominant demand market but performs comparatively well on delivery reliability. Very small high-late-rate states should be monitored as localized service risks rather than treated as platform-wide drivers.
 
+### Payment Method & AOV
+
+Payment behavior is concentrated in a few methods:
+
+| Payment type | Orders | Order share | AOV | Total payment value |
+|---|---:|---:|---:|---:|
+| Credit card | 74,975 | 75.40% | 167.29 | 12,542,527.15 |
+| Boleto | 19,784 | 19.90% | 145.03 | 2,869,361.27 |
+| Voucher | 3,151 | 3.17% | 120.29 | 379,043.91 |
+| Debit card | 1,527 | 1.54% | 142.72 | 217,939.79 |
+
+**Business interpretation:** credit cards dominate both order volume and payment value and also show the highest AOV among the major payment methods. Boleto remains an important secondary method at nearly one-fifth of orders. These differences are descriptive, not causal; product mix, customer mix, promotions, and order composition may contribute to AOV differences.
+
 ### Cancellations
 
 - Monthly cancellation rates generally stayed between **0.2% and 1.3%**.
@@ -141,6 +157,7 @@ The Tableau Public dashboard summarizes the core findings in one view:
 
 - Prioritize the **High Revenue / High Risk** seller segment for operational review because it combines elevated late-delivery risk with the greatest revenue exposure.
 - Investigate **RJ delivery performance** because it combines high order exposure with a 12.10% late-delivery rate, well above the platform average.
+- Treat **credit card and boleto** as the most commercially important payment methods because they account for the overwhelming majority of order volume and payment value.
 - Monitor seller hand-off time as **one** delivery-risk signal rather than treating it as a standalone predictor.
 - Prioritize investigation of sellers with persistently elevated late-delivery rates and long hand-off patterns.
 - Complement average delivery time with **median, P90, on-time rate, and long-tail exception monitoring** in future KPI design.
@@ -156,8 +173,8 @@ The Tableau Public dashboard summarizes the core findings in one view:
 | Seller-order grain correction & data-quality handling | Done |
 | Revenue x delivery-risk 2x2 segmentation | Done |
 | Customer geography analysis | Done |
+| Payment / AOV analysis | Done |
 | Tableau executive dashboard | Done |
-| Payment / AOV analysis | Planned |
 | Delayed delivery vs. repeat purchase | Planned |
 
 ## 8. Limitations & Retrospective
@@ -167,9 +184,10 @@ The Tableau Public dashboard summarizes the core findings in one view:
 - **Negative hand-off records:** 495 seller-order records among the 425 qualifying sellers had logically impossible negative hand-off durations. They are retained in order/delivery counts but excluded from hand-off averages and hand-off-rate denominators.
 - **Causality:** the seller analysis describes association, not causal effects. Pearson `r = 0.408` does not imply that slower seller hand-off causes late delivery.
 - **Seasonality:** the Nov 2017 spike cannot be confirmed as recurring seasonality from the available time span.
-- **Fan-out risk:** no current SQL joins `order_items` and `payments`; if added later, those tables should be aggregated to order grain before joining to prevent duplicated aggregates.
+- **Fan-out risk:** payment records can repeat by order; `06_payment_aov.sql` aggregates them to order grain before payment-method analysis. Any future query joining `order_items` and `payments` should aggregate both sides before joining.
 - **2x2 segmentation:** the four seller segments are prioritization buckets based on population medians, not causal classifications or externally validated risk thresholds.
 - **Geography:** state-level late-delivery rates identify where reliability differs, but they do not isolate the underlying cause; distance, carrier mix, seller mix, or other factors may contribute.
+- **Payment/AOV:** payment-method differences in AOV are descriptive and should not be interpreted as causal effects of payment choice.
 
 ## 9. Repository Structure
 
@@ -179,7 +197,8 @@ The Tableau Public dashboard summarizes the core findings in one view:
 │   ├── 02_logistics_analysis.sql
 │   ├── 03_root_cause_analysis.sql
 │   ├── 04_tableau_exports.sql
-│   └── 05_customer_geography.sql
+│   ├── 05_customer_geography.sql
+│   └── 06_payment_aov.sql
 ├── docs/
 │   └── schema_notes.md
 ├── README.md
