@@ -88,6 +88,9 @@ HAVING COUNT(*) >= 50;
 --   Avg hand-off days: min 0.63 | P25 1.50 | median 2.14 | P75 3.28 | max 15.14
 --   Late-delivery rate: min 0.00% | P25 3.52% | median 5.69% | P75 8.72% | max 30.14%
 --   Negative hand-off seller-order records among qualifying sellers: 495
+--
+-- Note: the percentile values below use APPROX_QUANTILES, so reported
+-- quartiles/medians are approximate rather than exact order-statistic values.
 -- ---------------------------------------------------------------------
 SELECT
   COUNT(*) AS qualifying_sellers,
@@ -173,10 +176,11 @@ WHERE avg_handoff_days IS NOT NULL;
 -- not joined here.
 --
 -- Population: same seller-order base and >=50 seller-order threshold used
--- above. Thresholds are the qualifying-seller medians for total revenue and
--- late-delivery rate.
+-- above. Thresholds are APPROX_QUANTILES-based approximate medians for total
+-- revenue and late-delivery rate. Because these are approximate quantiles,
+-- sellers close to the boundary may differ from an exact-median split.
 --
--- Validated segment summary:
+-- Validated segment summary using the approximate-median thresholds:
 --   High Revenue / High Risk: 116 sellers | 4,571,185.21 revenue |
 --     9.38% avg late-delivery rate | 268.6 avg orders/seller
 --   High Revenue / Low Risk: 96 sellers | 3,058,795.86 revenue |
