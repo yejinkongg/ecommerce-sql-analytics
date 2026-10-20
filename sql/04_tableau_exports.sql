@@ -180,9 +180,8 @@ ORDER BY late_delivery_rate, total_orders DESC;
 -- Average delivery time intentionally matches Part 2's validated definition:
 -- elapsed full 24-hour days between purchase and customer receipt
 -- (12.09 days in the validated output).
--- Seller hand-off is not included as a dashboard KPI here because Part 2 and
--- Part 3 currently use different hand-off definitions. Use 4.3 for seller
--- hand-off analysis until those definitions are fully unified.
+-- Seller hand-off is analyzed in 4.3 using the same calendar-day definition
+-- and negative-value exclusion rule as Part 3.
 -- ---------------------------------------------------------------------
 WITH customer_orders AS (
   SELECT
