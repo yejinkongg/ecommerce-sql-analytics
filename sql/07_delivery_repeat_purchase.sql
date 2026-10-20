@@ -6,14 +6,21 @@
 
 
 -- ---------------------------------------------------------------------
--- 7.1 First Delivery Experience vs. Repeat Purchase
+-- 7.1 First Delivery Experience vs. Post-Delivery Repeat Purchase
 -- Question: Is a customer's first delivery experience associated with whether
---           they place another order later?
+--           they place another order after that first delivery is completed?
 --
 -- Customer grain:
 -- Orders are sequenced within each customer_unique_id. The first observed
--- order is classified as late or on-time/early if a delivery timestamp exists.
--- Repeat purchase is defined as customer_order_count >= 2.
+-- order is classified as late or on-time/early only when a delivery timestamp
+-- exists. Repeat purchase is counted only when a later order is placed AFTER
+-- the first order's delivery timestamp, so pre-delivery follow-up orders are
+-- not incorrectly attributed to the first delivery experience.
+--
+-- Coverage:
+-- 96,096 unique customers exist in the dataset. 93,254 have a delivered first
+-- observed order and are eligible for this comparison; 2,842 customers whose
+-- first observed order lacks a delivery timestamp are excluded.
 --
 -- Important interpretation rule:
 -- This is an observational association, not a causal estimate. Customers who
@@ -30,10 +37,7 @@ WITH customer_orders AS (
     ROW_NUMBER() OVER (
       PARTITION BY c.customer_unique_id
       ORDER BY o.order_purchase_timestamp, o.order_id
-    ) AS order_rank,
-    COUNT(*) OVER (
-      PARTITION BY c.customer_unique_id
-    ) AS customer_order_count
+    ) AS order_rank
   FROM `e-commerce-public-dataanalysis.olist.orders` o
   JOIN `e-commerce-public-dataanalysis.olist.customers` c
     ON o.customer_id = c.customer_id
@@ -41,7 +45,8 @@ WITH customer_orders AS (
 first_order AS (
   SELECT
     customer_unique_id,
-    customer_order_count,
+    order_id AS first_order_id,
+    order_delivered_customer_date AS first_delivery_timestamp,
     CASE
       WHEN order_delivered_customer_date IS NOT NULL
         AND DATE(order_delivered_customer_date) > DATE(order_estimated_delivery_date)
@@ -52,33 +57,61 @@ first_order AS (
     END AS first_delivery_status
   FROM customer_orders
   WHERE order_rank = 1
+),
+customer_repeat AS (
+  SELECT
+    f.customer_unique_id,
+    f.first_delivery_status,
+    MAX(
+      CASE
+        WHEN co.order_purchase_timestamp > f.first_delivery_timestamp THEN 1
+        ELSE 0
+      END
+    ) AS repeated_after_first_delivery
+  FROM first_order f
+  LEFT JOIN customer_orders co
+    ON f.customer_unique_id = co.customer_unique_id
+   AND f.first_order_id != co.order_id
+  WHERE f.first_delivery_status IS NOT NULL
+  GROUP BY
+    f.customer_unique_id,
+    f.first_delivery_status
 )
 SELECT
   first_delivery_status,
   COUNT(*) AS customers,
-  COUNTIF(customer_order_count >= 2) AS repeat_customers,
+  COUNTIF(repeated_after_first_delivery = 1) AS repeat_customers_after_delivery,
   ROUND(
-    SAFE_DIVIDE(COUNTIF(customer_order_count >= 2), COUNT(*)) * 100,
+    SAFE_DIVIDE(
+      COUNTIF(repeated_after_first_delivery = 1),
+      COUNT(*)
+    ) * 100,
     2
-  ) AS repeat_customer_rate
-FROM first_order
-WHERE first_delivery_status IS NOT NULL
+  ) AS repeat_customer_rate_after_delivery
+FROM customer_repeat
 GROUP BY first_delivery_status
 ORDER BY first_delivery_status;
 
--- Validated result summary:
+-- Recalculated result summary (post-delivery repeat only):
 --   First order late:
---     6,345 customers | 161 repeat customers | 2.54% repeat rate
+--     6,345 customers | 74 repeat after delivery | 1.17% repeat rate
 --   First order on time / early:
---     86,909 customers | 2,716 repeat customers | 3.13% repeat rate
+--     86,909 customers | 1,711 repeat after delivery | 1.97% repeat rate
 --
 -- Observed difference:
---   Repeat rate is 0.59 percentage points lower among customers whose first
---   observed delivery was late (2.54% vs. 3.13%).
+--   Post-delivery repeat rate is 0.80 percentage points lower among customers
+--   whose first observed delivery was late (1.17% vs. 1.97%).
+--
+-- Why this differs from the earlier 2.54% vs. 3.13% comparison:
+--   The earlier version counted any customer with 2+ observed orders as a
+--   repeat customer, including orders placed before the first delivery was
+--   completed. Among those earlier repeat customers, 1,092 of 2,877 (38.0%)
+--   placed the next order before first delivery; this share was 54.0% in the
+--   late group and 37.0% in the on-time/early group. Restricting the outcome
+--   to purchases after first delivery better matches the business question.
 --
 -- Business interpretation:
---   The pattern is directionally consistent with worse first-delivery
---   experiences being associated with weaker retention, but the difference is
---   modest and should not be interpreted as evidence that late delivery causes
---   lower repeat purchase. It is best used as a retention-risk signal that
---   motivates deeper controlled analysis.
+--   The direction remains consistent with worse first-delivery experiences
+--   being associated with weaker retention, but the result remains
+--   observational and should not be interpreted as evidence that late delivery
+--   causes lower repeat purchase.
