@@ -1,8 +1,8 @@
 # E-Commerce Sales & Logistics Analytics
 
-A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, translating demand, logistics, cancellation, seller-level delivery patterns, customer geography, payment behavior, and repeat-purchase signals into business-relevant insights.
+A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, translating demand, logistics, cancellation, seller-level delivery patterns, customer geography, payment behavior, repeat-purchase signals, and customer satisfaction into business-relevant insights.
 
-> **Status: Core analysis and Tableau dashboard complete.**
+> **Status: Core analysis, customer satisfaction analysis, and Tableau dashboard complete.**
 
 > Interactive dashboard: [Tableau Public](https://public.tableau.com/views/E-CommerceSalesLogisticsAnalytics/Dashboard1?:language=en-US&publish=yes&:sid=&:redirect=auth&:display_count=n&:origin=viz_share_link)
 >
@@ -23,6 +23,8 @@ A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, transl
 - **SP accounted for 41.98% of orders** with a 4.49% late-delivery rate, while **RJ accounted for 12.92% of orders** with a much higher 12.10% late-delivery rate
 - **Credit cards accounted for 75.40% of payment orders** and had the highest **average payment value per order** among major payment methods at **167.29**
 - Among customers with a delivered first observed order, **post-delivery repeat purchase was 1.25% after a late first delivery vs. 2.02% after an on-time/early first delivery**
+- Across **95,830 delivered orders with a selected review**, review score and delivery time showed a **moderate negative association (Pearson r = -0.334)**; 1-star orders averaged **21.30 days** vs. **10.66 days** for 5-star orders
+- Among product categories with at least 100 delivered reviewed order-category records, **office_furniture** had the lowest average review score (**3.64**) and the longest average delivery time (**20.56 days**)
 
 The goal was not just to write correct SQL, but to **translate raw numbers into business decisions while documenting metric definitions, data-quality issues, and analytical limitations.**
 
@@ -38,16 +40,17 @@ This project uses e-commerce operations data to answer:
 - Which customer geographies combine high order exposure with elevated delivery risk?
 - Which payment methods dominate order volume, and how does average payment value per order differ by payment type?
 - Is first-delivery performance associated with later **post-delivery** repeat purchasing?
+- How is delivery time associated with review score, and which product categories combine weaker reviews with longer delivery times?
 - What operational or customer-growth actions do these findings support?
 
 ## 2. Dataset
 
 - **Olist Brazilian E-Commerce Public Dataset** (Kaggle)
 - Analysis period: Sep 2016 - Oct 2018 (some months have incomplete data; see Limitations)
-- Tables used in the current SQL: `orders`, `order_items`, `customers`, `payments`
-- Additional tables available in the current BigQuery dataset after later re-upload / re-verification: `geolocation`, `category_translation`, `products`, `sellers`, `order_reviews`
+- Tables used in the current SQL: `orders`, `order_items`, `customers`, `payments`, `products`, `order_reviews`, `category_translation`
+- Additional available tables not required by the current SQL workflow: `geolocation`, `sellers`
 
-See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table availability, metric definitions, seller-order grain, and data-quality handling.
+See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table availability, metric definitions, seller-order grain, review deduplication, and data-quality handling.
 
 ## 3. Tools & Techniques
 
@@ -57,8 +60,10 @@ See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table
 - Window functions (`AVG() OVER()`, `LAG() OVER()`, `SUM() OVER()`, `ROW_NUMBER() OVER()`, `COUNT() OVER()`)
 - `SAFE_DIVIDE`, `DATE_DIFF`, `TIMESTAMP_DIFF`, `DATE_TRUNC`, `FORMAT_DATE`
 - `APPROX_QUANTILES` for seller-level distribution summaries and approximate segmentation thresholds
-- `CORR` for seller-level association analysis
+- `CORR` for seller- and order-level association analysis
 - Seller-order deduplication to prevent multi-item orders from receiving extra weight
+- Most-recent-review selection with `ROW_NUMBER()` to create one review row per order
+- Order-category deduplication before category-level satisfaction analysis
 - Seller revenue aggregation from `order_items.price` without joining payments, avoiding order_items x payments fan-out
 - Payment aggregation to one row per order before payment-method analysis to avoid duplication
 - State-level demand and delivery-risk comparison using dynamic order-share calculations
@@ -161,15 +166,38 @@ The earlier unrestricted comparison (2.54% vs. 3.13%) mixed in customers who reo
 
 **Limitation:** the available fields do not establish a causal relationship between delivery delays and cancellations.
 
+### Customer Satisfaction
+
+The review analysis first selects **one review per order** using the most recent review timestamp, preventing duplicate review rows from overweighting orders. Delivery time is measured as elapsed hours from purchase to customer delivery divided by 24.0, preserving fractional days.
+
+| Review score | Delivered reviewed orders | Avg delivery days |
+|---:|---:|---:|
+| 1 | 9,355 | 21.30 |
+| 2 | 2,921 | 16.62 |
+| 3 | 7,917 | 14.24 |
+| 4 | 18,888 | 12.29 |
+| 5 | 56,749 | 10.66 |
+
+Across **95,830 delivered orders with a selected review**, review score and delivery time showed a **moderate negative linear association (Pearson r = -0.334)**. Average delivery time was **10.64 days longer for 1-star orders than for 5-star orders**.
+
+At category level, `order_items` is reduced to **one row per order-category** before aggregation so multiple items from the same category do not overweight an order. Among categories with at least 100 delivered reviewed order-category records:
+
+- **office_furniture:** 1,244 orders, **3.64** average review score, **20.56** average delivery days
+- **audio:** 345 orders, **3.84** average review score, **13.41** days
+- **bed_bath_table:** 9,177 orders, **4.00** average review score, **12.92** days
+- **furniture_decor:** 6,260 orders, **4.06** average review score, **13.00** days
+
+**Business interpretation:** `office_furniture` is the clearest category-level operational signal because it combines the lowest average review score in the qualifying set with the longest average delivery time. The broader review-delivery relationship is descriptive, not causal; product quality, seller mix, geography, listing accuracy, and other factors may also affect review outcomes.
+
 ## 5. Dashboard
 
-The Tableau Public dashboard summarizes the core findings in one view:
+The Tableau Public dashboard summarizes the core operational findings in one view:
 
 - KPI cards for total orders, average delivery days, on-time delivery rate, late-delivery rate, and repeat customer rate
 - Monthly order volume vs. cancellation rate, including the Nov 2017 peak of 7,544 orders
 - Seller average hand-off time vs. late-delivery rate, with top/bottom reliability groups and an overall linear trend line
 
-**Dashboard period note:** KPI cards use the full available dataset, while the monthly trend is intentionally restricted to **Jan 2017-Aug 2018** to exclude sparse partial months that would distort month-over-month interpretation.
+**Dashboard period note:** KPI cards use the full available dataset, while the monthly trend is intentionally restricted to **Jan 2017-Aug 2018** to exclude sparse partial months that would distort month-over-month interpretation. The customer-satisfaction analysis in `08_customer_satisfaction.sql` is documented in the repository and README but is not currently visualized in the published Tableau dashboard.
 
 [Open the interactive Tableau dashboard](https://public.tableau.com/views/E-CommerceSalesLogisticsAnalytics/Dashboard1?:language=en-US&publish=yes&:sid=&:redirect=auth&:display_count=n&:origin=viz_share_link)
 
@@ -179,6 +207,7 @@ The Tableau Public dashboard summarizes the core findings in one view:
 - Investigate **RJ delivery performance** because it combines high order exposure with a 12.10% late-delivery rate, well above the platform average.
 - Treat **credit card and boleto** as the most commercially important payment methods because they account for the overwhelming majority of payment-order volume and payment value.
 - Treat a **late first delivery** as a potential retention-risk signal and investigate whether the relationship persists after controlling for geography, product mix, seller mix, and customer tenure.
+- Investigate **office_furniture** as the strongest category-level satisfaction risk signal, while separating delivery effects from product, seller, and listing-quality factors before assigning cause.
 - Monitor seller hand-off time as **one** delivery-risk signal rather than treating it as a standalone predictor.
 - Prioritize investigation of sellers with persistently elevated late-delivery rates and long hand-off patterns.
 - Complement average delivery time with **median, P90, on-time rate, and long-tail exception monitoring** in future KPI design.
@@ -195,16 +224,21 @@ The Tableau Public dashboard summarizes the core findings in one view:
 | Customer geography analysis | Done |
 | Payment method / average payment value analysis | Done |
 | Delayed delivery vs. post-delivery repeat purchase | Done |
+| Customer satisfaction: review score vs. delivery time | Done |
+| Customer satisfaction: category-level analysis | Done |
 | Tableau executive dashboard | Done |
 
 ## 8. Limitations & Retrospective
 
-- **Schema assumptions:** the analysis scope was revised after checking the tables available in the BigQuery environment used for the project. Additional source tables were later re-uploaded / re-verified, but the completed core workflow only requires `orders`, `order_items`, `customers`, and `payments`.
+- **Schema assumptions:** the analysis scope was revised after checking the tables available in the BigQuery environment used for the project. The current workflow uses `orders`, `order_items`, `customers`, `payments`, `products`, `order_reviews`, and `category_translation`.
 - **Metric consistency:** seller hand-off now uses the same calendar-day definition and negative-value exclusion rule in Parts 2 and 3; the validated overall average in `02` is **2.74 days**.
 - **Negative hand-off records:** 495 seller-order records among the 425 qualifying sellers had logically impossible negative hand-off durations. They are retained in order/delivery counts but excluded from hand-off averages and hand-off-rate denominators.
-- **Causality:** the seller analysis describes association, not causal effects. Pearson `r = 0.408` does not imply that slower seller hand-off causes late delivery.
+- **Causality:** seller, repeat-purchase, and customer-satisfaction analyses describe associations, not causal effects. Pearson correlations do not establish that slower hand-off or longer delivery causes the observed outcome.
+- **Customer satisfaction grain:** `08` selects the most recent review when an order has multiple review records and uses one row per order-category for category summaries. Orders containing multiple categories can therefore appear once in each category by design.
+- **Delivery-time definitions:** the core 12.09-day logistics KPI uses full-day differences, while `08` uses elapsed hours divided by 24.0 to preserve fractional-day variation. These measures should not be compared as if they were identical definitions.
+- **Category translation import:** `category_translation` is stored with generic fields `string_field_0` / `string_field_1` and the original header as a data row; `08` cleans this before joining.
 - **Seasonality:** the Nov 2017 spike cannot be confirmed as recurring seasonality from the available time span.
-- **Fan-out risk:** payment records can repeat by order; `06_payment_aov.sql` aggregates them to order grain before payment-method analysis. Any future query joining `order_items` and `payments` should aggregate both sides before joining.
+- **Fan-out risk:** payment records can repeat by order; `06_payment_aov.sql` aggregates them to order grain before payment-method analysis. `08` also deduplicates order-category combinations before category-level aggregation.
 - **2x2 segmentation:** the four seller segments are prioritization buckets based on **approximate medians from `APPROX_QUANTILES`**, not exact-median splits, causal classifications, or externally validated risk thresholds. Sellers near a threshold can move between groups under an exact percentile calculation.
 - **Geography:** state-level late-delivery rates identify where reliability differs, but they do not isolate the underlying cause; distance, carrier mix, seller mix, or other factors may contribute.
 - **Payment value:** `payment_value` represents the amount paid rather than merchandise-only revenue and can include freight and financing/installment-related charges. Three `not_defined` payment orders are omitted from the summary table, and one of the 99,441 orders has no payment record.
@@ -220,7 +254,8 @@ The Tableau Public dashboard summarizes the core findings in one view:
 │   ├── 04_tableau_exports.sql
 │   ├── 05_customer_geography.sql
 │   ├── 06_payment_aov.sql
-│   └── 07_delivery_repeat_purchase.sql
+│   ├── 07_delivery_repeat_purchase.sql
+│   └── 08_customer_satisfaction.sql
 ├── docs/
 │   └── schema_notes.md
 ├── README.md
