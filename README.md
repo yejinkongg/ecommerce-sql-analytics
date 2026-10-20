@@ -196,8 +196,9 @@ The Tableau Public dashboard summarizes the core operational findings in one vie
 - KPI cards for total orders, average delivery days, on-time delivery rate, late-delivery rate, and repeat customer rate
 - Monthly order volume vs. cancellation rate, including the Nov 2017 peak of 7,544 orders
 - Seller average hand-off time vs. late-delivery rate, with top/bottom reliability groups and an overall linear trend line
+- Average delivery time by review score, with the validated Pearson correlation (r = -0.334)
 
-**Dashboard period note:** KPI cards use the full available dataset, while the monthly trend is intentionally restricted to **Jan 2017-Aug 2018** to exclude sparse partial months that would distort month-over-month interpretation. The customer-satisfaction analysis in `08_customer_satisfaction.sql` is documented in the repository and README but is not currently visualized in the published Tableau dashboard.
+**Dashboard period note:** KPI cards use the full available dataset, while the monthly trend is intentionally restricted to **Jan 2017-Aug 2018** to exclude sparse partial months that would distort month-over-month interpretation. The published Tableau dashboard now also includes average delivery time by review score, using the validated customer-satisfaction results from `08_customer_satisfaction.sql` (Pearson r = -0.334).
 
 [Open the interactive Tableau dashboard](https://public.tableau.com/views/E-CommerceSalesLogisticsAnalytics/Dashboard1?:language=en-US&publish=yes&:sid=&:redirect=auth&:display_count=n&:origin=viz_share_link)
 
