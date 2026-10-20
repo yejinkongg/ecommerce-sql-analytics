@@ -4,20 +4,20 @@
 
 | Table | Purpose in this analysis | Used in |
 |---|---|---|
-| `orders` | Order lifecycle: status, purchase / approval / carrier hand-off / delivery timestamps | `01`, `02`, `03`, `04`, `05`, `07` |
-| `order_items` | Line-item detail; links orders to sellers and supports seller revenue aggregation | `03` |
+| `orders` | Order lifecycle: status, purchase / approval / carrier hand-off / delivery timestamps | `01`, `02`, `03`, `04`, `05`, `07`, `08` |
+| `order_items` | Line-item detail; links orders to sellers and products; supports seller revenue and category analysis | `03`, `08` |
 | `customers` | `customer_id` to `customer_unique_id` mapping; repeat purchase and state-level geography | `01`, `04`, `05`, `07` |
 | `payments` | Order-level payment value and payment type after aggregation to order grain | `06` |
+| `products` | Product-to-category mapping used for category-level satisfaction analysis | `08` |
+| `order_reviews` | Review scores; deduplicated to one selected review per order before satisfaction analysis | `08` |
+| `category_translation` | Portuguese-to-English category-name mapping after import cleanup | `08` |
 
-## Additional available tables not required by the completed core workflow
+## Additional available tables not required by the current workflow
 
 - `geolocation`
-- `category_translation`
-- `products`
 - `sellers`
-- `order_reviews`
 
-These tables are available in the **current** BigQuery dataset after later re-upload / re-verification, but are not required by the completed core SQL workflow. Some were not present in an earlier working copy of the dataset, which is why the project history refers to schema re-verification. Customer geography in `05` uses `customers.customer_state`, so a geolocation join is unnecessary for the current state-level analysis.
+These tables are available in the current BigQuery dataset but are not required by the implemented SQL workflow. Customer geography in `05` uses `customers.customer_state`, so a geolocation join is unnecessary for the current state-level analysis.
 
 ## Schema re-verification
 
@@ -37,8 +37,12 @@ Early query design was revised after rechecking the actual BigQuery dataset and 
 | Seller 2x2 thresholds | `03` 3.6 | `APPROX_QUANTILES(..., 2)` approximate medians for seller revenue and late-delivery rate |
 | Average payment value per order | `06` | `payments.payment_value` summed to one row per order, then averaged by primary payment type; this is payment value, not merchandise-only revenue |
 | First-delivery repeat comparison | `07` | First observed delivery classified late vs. on-time/early; a customer repeats if any later order is placed after the first delivery timestamp |
+| Review score vs. delivery time | `08` 8.1-8.2 | Most recent review selected per order; delivery time = elapsed hours from purchase to delivery / 24.0 |
+| Category satisfaction summary | `08` 8.3 | Distinct order-category grain; average review score and elapsed delivery days for categories with at least 100 records |
 
 The seller hand-off definition in `02` is aligned with the rule used in `03`: calendar-day differences with negative hand-off durations excluded from the average.
+
+The customer-satisfaction delivery-time definition is intentionally different from the 12.09-day core logistics KPI. `08` preserves fractional days by dividing elapsed hours by 24.0, while `02` reports full-day differences.
 
 ## Seller-level analysis grain and data-quality handling
 
@@ -62,10 +66,11 @@ This matters only for sellers very close to the boundary: an exact-median split 
 
 `order_items` and `payments` each have a one-to-many relationship with `orders`. A direct `JOIN` between them on `order_id` can multiply rows for orders with multiple items and multiple payment records, inflating `COUNT` / `SUM` aggregates.
 
-The completed workflow avoids this risk in two ways:
+The completed workflow avoids this risk in several ways:
 
 - seller revenue in `03` is aggregated from `order_items.price` without joining `payments`;
-- payment analysis in `06` aggregates `payments` to one row per order before calculating payment mix and average payment value per order.
+- payment analysis in `06` aggregates `payments` to one row per order before calculating payment mix and average payment value per order;
+- category satisfaction in `08` reduces `order_items` to distinct `order_id` + category pairs before joining reviews and orders.
 
 No current SQL directly joins raw `order_items` rows to raw `payments` rows.
 
@@ -91,6 +96,47 @@ BigQuery-validated post-delivery repeat rates:
 
 The result remains observational and does not establish that late delivery causes lower retention.
 
+## Review deduplication and customer-satisfaction grain
+
+`order_reviews` can contain more than one review row for the same order. Part 8 therefore ranks reviews within each `order_id` and keeps the most recent row by `review_answer_timestamp`, then `review_creation_date`, before joining to orders.
+
+This creates one selected review per delivered order for review-score averages and the order-level Pearson correlation. The validated population contains **95,830 delivered orders with a selected review**.
+
+Category analysis uses a separate one-row-per-`order_id` + `product_category` grain. Multiple items from the same category in one order therefore count once for that category, while an order containing products from multiple categories can appear once in each relevant category.
+
+## Category-translation import cleanup
+
+In the current BigQuery dataset, `category_translation` was loaded with generic field names:
+
+- `string_field_0`
+- `string_field_1`
+
+The original CSV header is also present as the first data row. Part 8 aliases these fields to `product_category_name` / `product_category_name_english` and removes the row where `string_field_0 = 'product_category_name'` before joining to `products`.
+
+## Validated customer-satisfaction results
+
+Review score vs. elapsed delivery time:
+
+- **1 star:** 9,355 orders; **21.30 days** average delivery time
+- **2 stars:** 2,921 orders; **16.62 days**
+- **3 stars:** 7,917 orders; **14.24 days**
+- **4 stars:** 18,888 orders; **12.29 days**
+- **5 stars:** 56,749 orders; **10.66 days**
+- **Pearson correlation:** `r = -0.334` across **95,830** delivered reviewed orders
+
+The 1-star vs. 5-star average-delivery gap is **10.64 days**. This is a moderate negative association, not evidence that delivery time alone causes review outcomes.
+
+Selected category-level results among categories with at least 100 delivered reviewed order-category records:
+
+- **office_furniture:** 1,244 records; **3.64** average review score; **20.56 days** average delivery time
+- **fashion_male_clothing:** 105; **3.82**; **12.66 days**
+- **audio:** 345; **3.84**; **13.41 days**
+- **home_confort:** 390; **3.88**; **13.71 days**
+- **bed_bath_table:** 9,177; **4.00**; **12.92 days**
+- **furniture_decor:** 6,260; **4.06**; **13.00 days**
+
+`office_furniture` is the clearest category-level operational signal because it combines the lowest average review score in the qualifying set with the longest average delivery time. The result remains descriptive and can reflect product mix, seller mix, geography, product quality, listing accuracy, or other factors.
+
 ## Validated seller-level results
 
 For sellers with at least 50 seller-orders:
@@ -110,3 +156,4 @@ The correlation indicates a moderate positive association, but the overlap in ha
 - **Customer geography:** SP represents 41.98% of orders at 4.49% late-delivery rate; RJ represents 12.92% of orders at 12.10% late-delivery rate.
 - **Payment method / payment value:** credit cards represent 75.40% of payment orders with 167.29 average payment value per order; boleto represents 19.90% with 145.03.
 - **First delivery vs. post-delivery repeat purchase:** BigQuery-validated repeat rate is 1.25% after a late first delivery vs. 2.02% after an on-time/early first delivery; this is observational, not causal.
+- **Customer satisfaction:** review score and delivery time have a BigQuery-validated Pearson correlation of **-0.334** at one selected review per delivered order; `office_furniture` is the lowest-rated and longest-delivery qualifying category at **3.64 stars** and **20.56 days**.
