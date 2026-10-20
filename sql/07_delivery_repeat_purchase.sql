@@ -93,7 +93,7 @@ FROM customer_repeat
 GROUP BY first_delivery_status
 ORDER BY first_delivery_status;
 
--- CSV-reproduced result summary for the SQL logic above:
+-- BigQuery-validated result summary:
 --   First order late:
 --     6,345 customers | 79 repeat after delivery | 1.25% repeat rate
 --   First order on time / early:
