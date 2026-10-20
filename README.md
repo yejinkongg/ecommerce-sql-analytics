@@ -1,8 +1,8 @@
 # E-Commerce Sales & Logistics Analytics
 
-A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, translating demand, logistics, cancellation, and seller-level delivery patterns into business-relevant insights.
+A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, translating demand, logistics, cancellation, seller-level delivery patterns, and customer geography into business-relevant insights.
 
-> **Status: Core analysis and Tableau dashboard complete; customer geography, payment/AOV, and repeat-purchase follow-up analyses remain.**
+> **Status: Core analysis and Tableau dashboard complete; payment/AOV and repeat-purchase follow-up analyses remain.**
 
 > Interactive dashboard: [Tableau Public](https://public.tableau.com/views/E-CommerceSalesLogisticsAnalytics/Dashboard1?:language=en-US&publish=yes&:sid=&:redirect=auth&:display_count=n&:origin=viz_share_link)
 >
@@ -20,6 +20,7 @@ A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, transl
 - Among 425 sellers with at least 50 seller-orders, the **top 20 had 0.00-0.93% late-delivery rates**, while the **bottom 20 had 15.32-30.14%**
 - Seller average hand-off time and late-delivery rate showed a **moderate positive association (Pearson r = 0.408)**
 - In the Revenue x Delivery-Risk segmentation, **116 High Revenue / High Risk sellers accounted for 4.57M in seller revenue and averaged a 9.38% late-delivery rate**
+- **SP accounted for 41.98% of orders** with a 4.49% late-delivery rate, while **RJ accounted for 12.92% of orders** with a much higher 12.10% late-delivery rate
 
 The goal was not just to write correct SQL, but to **translate raw numbers into business decisions while documenting metric definitions, data-quality issues, and analytical limitations.**
 
@@ -32,6 +33,7 @@ This project uses e-commerce operations data to answer:
 - Are delivery delays and cancellations systemic issues, or concentrated exceptions?
 - How much does seller hand-off performance relate to delivery reliability?
 - Which sellers combine high commercial value with elevated delivery risk?
+- Which customer geographies combine high order exposure with elevated delivery risk?
 - What operational or customer-growth actions do these findings support?
 
 ## 2. Dataset
@@ -48,12 +50,13 @@ See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table
 - **BigQuery Standard SQL**
 - **Tableau Public** for the executive dashboard
 - CTEs and temporary tables
-- Window functions (`AVG() OVER()`, `LAG() OVER()`)
+- Window functions (`AVG() OVER()`, `LAG() OVER()`, `SUM() OVER()`)
 - `SAFE_DIVIDE`, `DATE_DIFF`, `DATE_TRUNC`, `FORMAT_DATE`
 - `APPROX_QUANTILES` for seller-level distribution summaries and segmentation thresholds
 - `CORR` for seller-level association analysis
 - Seller-order deduplication to prevent multi-item orders from receiving extra weight
 - Seller revenue aggregation from `order_items.price` without joining payments, avoiding order_items x payments fan-out
+- State-level demand and delivery-risk comparison using dynamic order-share calculations
 - Tableau KPI cards, dual-axis monthly trend visualization, seller-risk scatter plot, and linear trend line
 
 ## 4. Key Insights
@@ -101,6 +104,20 @@ Using the same 425 qualifying sellers, seller revenue was calculated as the sum 
 
 **Business interpretation:** the **High Revenue / High Risk** segment is the primary intervention group because it combines the largest revenue exposure with materially elevated late-delivery risk. The Low Revenue / High Risk group has an even higher average late rate, but represents substantially less revenue exposure.
 
+### Customer Geography
+
+Customer demand and delivery reliability vary materially by state:
+
+- **SP:** 41,746 orders, **41.98%** of all orders, **4.49%** late-delivery rate
+- **RJ:** 12,852 orders, **12.92%** share, **12.10%** late-delivery rate
+- **MG:** 11,635 orders, **11.70%** share, **4.58%** late-delivery rate
+- **RS:** 5,466 orders, **5.50%** share, **6.08%** late-delivery rate
+- **PR:** 5,045 orders, **5.07%** share, **4.04%** late-delivery rate
+
+Smaller states such as **AL (21.41%)** and **MA (17.43%)** have much higher late-delivery rates, but account for only **0.42%** and **0.75%** of orders respectively.
+
+**Business interpretation:** **RJ is the clearest geography for operational investigation** because it combines meaningful order exposure with a late-delivery rate well above the overall 6.77% benchmark. SP is the dominant demand market but performs comparatively well on delivery reliability. Very small high-late-rate states should be monitored as localized service risks rather than treated as platform-wide drivers.
+
 ### Cancellations
 
 - Monthly cancellation rates generally stayed between **0.2% and 1.3%**.
@@ -123,6 +140,7 @@ The Tableau Public dashboard summarizes the core findings in one view:
 ## 6. Business Recommendations
 
 - Prioritize the **High Revenue / High Risk** seller segment for operational review because it combines elevated late-delivery risk with the greatest revenue exposure.
+- Investigate **RJ delivery performance** because it combines high order exposure with a 12.10% late-delivery rate, well above the platform average.
 - Monitor seller hand-off time as **one** delivery-risk signal rather than treating it as a standalone predictor.
 - Prioritize investigation of sellers with persistently elevated late-delivery rates and long hand-off patterns.
 - Complement average delivery time with **median, P90, on-time rate, and long-tail exception monitoring** in future KPI design.
@@ -137,8 +155,8 @@ The Tableau Public dashboard summarizes the core findings in one view:
 | Seller-level delivery-risk analysis | Done |
 | Seller-order grain correction & data-quality handling | Done |
 | Revenue x delivery-risk 2x2 segmentation | Done |
+| Customer geography analysis | Done |
 | Tableau executive dashboard | Done |
-| Customer geography analysis | Planned |
 | Payment / AOV analysis | Planned |
 | Delayed delivery vs. repeat purchase | Planned |
 
@@ -151,6 +169,7 @@ The Tableau Public dashboard summarizes the core findings in one view:
 - **Seasonality:** the Nov 2017 spike cannot be confirmed as recurring seasonality from the available time span.
 - **Fan-out risk:** no current SQL joins `order_items` and `payments`; if added later, those tables should be aggregated to order grain before joining to prevent duplicated aggregates.
 - **2x2 segmentation:** the four seller segments are prioritization buckets based on population medians, not causal classifications or externally validated risk thresholds.
+- **Geography:** state-level late-delivery rates identify where reliability differs, but they do not isolate the underlying cause; distance, carrier mix, seller mix, or other factors may contribute.
 
 ## 9. Repository Structure
 
@@ -159,7 +178,8 @@ The Tableau Public dashboard summarizes the core findings in one view:
 │   ├── 01_demand_analysis.sql
 │   ├── 02_logistics_analysis.sql
 │   ├── 03_root_cause_analysis.sql
-│   └── 04_tableau_exports.sql
+│   ├── 04_tableau_exports.sql
+│   └── 05_customer_geography.sql
 ├── docs/
 │   └── schema_notes.md
 ├── README.md
