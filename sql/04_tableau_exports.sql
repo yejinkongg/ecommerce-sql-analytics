@@ -12,6 +12,10 @@
 -- 4.1 tableau_monthly_orders
 -- Purpose: monthly demand trend + cancellation rate
 -- Recommended Tableau use: line chart for orders, secondary line for cancel rate
+--
+-- Dashboard analysis window: Jan 2017 - Aug 2018.
+-- Sparse partial months outside this range are excluded before the LAG()
+-- calculation so incomplete periods do not create misleading MoM growth rates.
 -- ---------------------------------------------------------------------
 WITH monthly AS (
   SELECT
@@ -19,6 +23,8 @@ WITH monthly AS (
     COUNT(*) AS total_orders,
     COUNTIF(order_status = 'canceled') AS cancelled_orders
   FROM `e-commerce-public-dataanalysis.olist.orders`
+  WHERE DATE(order_purchase_timestamp) >= DATE '2017-01-01'
+    AND DATE(order_purchase_timestamp) < DATE '2018-09-01'
   GROUP BY order_month
 ),
 with_growth AS (
