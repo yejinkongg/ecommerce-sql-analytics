@@ -2,8 +2,10 @@
 
 A BigQuery SQL analysis of the Olist Brazilian E-Commerce public dataset, translating demand, logistics, cancellation, and seller-level delivery patterns into business-relevant insights.
 
-> **Status: Core analysis complete; customer geography and payment/AOV analysis are planned next.**
+> **Status: Core analysis and Tableau dashboard complete; customer geography and payment/AOV analysis are planned next.**
 
+> Interactive dashboard: [Tableau Public](https://public.tableau.com/views/E-CommerceSalesLogisticsAnalytics/Dashboard1?:language=en-US&publish=yes&:sid=&:redirect=auth&:display_count=n&:origin=viz_share_link)
+>
 > Full write-up (project journey, debugging process, and detailed findings): [Notion](https://app.notion.com/p/E-Commerce-Sales-Logistics-Analytics-Project-39b7c6f38f688127838ce00127e455d4)
 
 ---
@@ -42,12 +44,14 @@ See [`docs/schema_notes.md`](docs/schema_notes.md) for schema assumptions, table
 ## 3. Tools & Techniques
 
 - **BigQuery Standard SQL**
+- **Tableau Public** for the executive dashboard
 - CTEs and temporary tables
 - Window functions (`AVG() OVER()`, `LAG() OVER()`)
 - `SAFE_DIVIDE`, `DATE_DIFF`, `DATE_TRUNC`, `FORMAT_DATE`
 - `APPROX_QUANTILES` for seller-level distribution summaries
 - `CORR` for seller-level association analysis
 - Seller-order deduplication to prevent multi-item orders from receiving extra weight
+- Tableau KPI cards, dual-axis monthly trend visualization, seller-risk scatter plot, and linear trend line
 
 ## 4. Key Insights
 
@@ -88,14 +92,24 @@ Among **425 sellers with at least 50 seller-orders**:
 
 **Limitation:** the available fields do not establish a causal relationship between delivery delays and cancellations.
 
-## 5. Business Recommendations
+## 5. Dashboard
+
+The Tableau Public dashboard summarizes the core findings in one view:
+
+- KPI cards for total orders, average delivery days, on-time delivery rate, late-delivery rate, and repeat customer rate
+- Monthly order volume vs. cancellation rate, including the Nov 2017 peak of 7,544 orders
+- Seller average hand-off time vs. late-delivery rate, with top/bottom reliability groups and an overall linear trend line
+
+[Open the interactive Tableau dashboard](https://public.tableau.com/views/E-CommerceSalesLogisticsAnalytics/Dashboard1?:language=en-US&publish=yes&:sid=&:redirect=auth&:display_count=n&:origin=viz_share_link)
+
+## 6. Business Recommendations
 
 - Monitor seller hand-off time as **one** delivery-risk signal rather than treating it as a standalone predictor.
 - Prioritize investigation of sellers with persistently elevated late-delivery rates and long hand-off patterns.
 - Complement average delivery time with **median, P90, on-time rate, and long-tail exception monitoring** in future KPI design.
 - Investigate retention opportunities given the **3.12% repeat customer rate**.
 
-## 6. Status & Roadmap
+## 7. Status & Roadmap
 
 | Item | Status |
 |---|---|
@@ -103,12 +117,13 @@ Among **425 sellers with at least 50 seller-orders**:
 | Logistics analysis | Done |
 | Seller-level delivery-risk analysis | Done |
 | Seller-order grain correction & data-quality handling | Done |
+| Tableau executive dashboard | Done |
 | Revenue x delivery-risk 2x2 segmentation | In progress |
 | Customer geography analysis | Planned |
 | Payment / AOV analysis | Planned |
 | Delayed delivery vs. repeat purchase | Planned |
 
-## 7. Limitations & Retrospective
+## 8. Limitations & Retrospective
 
 - **Schema assumptions:** the analysis scope was revised after checking the tables available in the BigQuery environment used for the project.
 - **Metric consistency:** overall hand-off time in `02` and seller-level hand-off time in `03` do not yet use exactly the same time definition, so they should not be directly compared.
@@ -117,13 +132,14 @@ Among **425 sellers with at least 50 seller-orders**:
 - **Seasonality:** the Nov 2017 spike cannot be confirmed as recurring seasonality from the available time span.
 - **Fan-out risk:** no current SQL joins `order_items` and `payments`; if added later, those tables should be aggregated to order grain before joining to prevent duplicated aggregates.
 
-## 8. Repository Structure
+## 9. Repository Structure
 
 ```text
 ├── sql/
 │   ├── 01_demand_analysis.sql
 │   ├── 02_logistics_analysis.sql
-│   └── 03_root_cause_analysis.sql
+│   ├── 03_root_cause_analysis.sql
+│   └── 04_tableau_exports.sql
 ├── docs/
 │   └── schema_notes.md
 ├── README.md
